@@ -33,11 +33,11 @@ const addMemberValidation = [
   ...groupIdParam,
   body("userId").isUUID().withMessage("userId must be a valid UUID."),
   body("role")
-    .optional()
+    .optional({ values: "null" })
     .isIn(shgRoles)
     .withMessage("Invalid SHG member role."),
   body("trustScore")
-    .optional()
+    .optional({ values: "null" })
     .isFloat({ min: 0, max: 100 })
     .withMessage("trustScore must be between 0 and 100."),
 ];
@@ -51,15 +51,15 @@ const createTransactionValidation = [
     .isFloat({ gt: 0 })
     .withMessage("Amount must be greater than 0."),
   body("description")
-    .optional()
+    .optional({ values: "null" })
     .isString()
     .withMessage("Description must be a string."),
   body("metadata")
-    .optional()
+    .optional({ values: "null" })
     .isObject()
     .withMessage("metadata must be an object."),
   body("metadata.approvalThreshold")
-    .optional()
+    .optional({ values: "null" })
     .isInt({ min: 1 })
     .withMessage("approvalThreshold must be at least 1."),
 ];
@@ -67,7 +67,7 @@ const createTransactionValidation = [
 const approvalActionValidation = [
   ...transactionIdParam,
   body("remarks")
-    .optional()
+    .optional({ values: "null" })
     .isString()
     .withMessage("Remarks must be a string."),
 ];
@@ -81,11 +81,11 @@ const createProposalValidation = [
     .isLength({ max: 180 })
     .withMessage("Proposal title must be 180 characters or fewer."),
   body("description")
-    .optional()
+    .optional({ values: "null" })
     .isString()
     .withMessage("Description must be a string."),
   body("deadline")
-    .optional()
+    .optional({ values: "null" })
     .isISO8601()
     .withMessage("Deadline must be a valid ISO date."),
 ];

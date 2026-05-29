@@ -19,7 +19,7 @@ const expensePayloadValidation = [
     .withMessage("amount is required.")
     .isFloat({ min: 0 })
     .withMessage("amount must be a non-negative number."),
-  body("description").optional().isString().withMessage("description must be a string."),
+  body("description").optional({ values: "null" }).isString().withMessage("description must be a string."),
 ];
 
 const idParam = [param("id").isUUID().withMessage("Expense id must be a valid UUID.")];

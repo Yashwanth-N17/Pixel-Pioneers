@@ -263,9 +263,10 @@ export default function LoanResultScreen() {
                   key={i}
                   icon={p.provider?.toLowerCase().includes('sbi') ? '🏛' : p.provider?.toLowerCase().includes('grameen') ? '🤝' : '🌾'}
                   name={`${p.provider} ${p.productName}`}
-                  rate={`${p.interestRate}% p.a.`}
+                  rate={p.interestRate?.endsWith('%') ? `${p.interestRate} p.a.` : `${p.interestRate}% p.a.`}
                   upto={`Upto Rs ${p.maxAmount?.toLocaleString('en-IN')}`}
-                  tag={p.reason}
+                  tag={p.provider?.toLowerCase().includes('sbi') || p.provider?.toLowerCase().includes('nabard') ? 'Govt Scheme' : 'Microfinance'}
+                  description={p.reason}
                   url={p.provider?.toLowerCase().includes('sbi') ? 'https://sbi.co.in' : 'https://nabard.org'}
                 />
               ))
@@ -319,6 +320,7 @@ function ProductCard({
   rate,
   upto,
   tag,
+  description,
   url,
 }: {
   icon: string;
@@ -326,17 +328,27 @@ function ProductCard({
   rate: string;
   upto: string;
   tag?: string;
+  description?: string;
   url?: string;
 }) {
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={() => url && Linking.openURL(url)} className="mb-2.5 rounded-2xl overflow-hidden border border-slate-100 bg-white p-3.5">
-      <View className="flex-row items-center">
-        <Text className="text-xl mr-3">{icon}</Text>
+      <View className="flex-row items-start">
+        <Text className="text-xl mr-3 mt-0.5">{icon}</Text>
         <View className="flex-1">
-          <Text className="text-[13px] font-black text-slate-900">{name}</Text>
-          <Text className="text-[12px] text-slate-500 mt-0.5">{rate} • {upto}</Text>
+          <View className="flex-row items-center flex-wrap gap-2">
+            <Text className="text-[13px] font-black text-slate-900">{name}</Text>
+            {tag ? (
+              <View className="px-2 py-0.5 rounded-full bg-emerald-50">
+                <Text className="text-[9px] font-black text-emerald-700">{tag}</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text className="text-[12px] text-slate-500 font-medium mt-0.5">{rate} • {upto}</Text>
+          {description ? (
+            <Text className="text-[11px] text-slate-400 mt-1 leading-4">{description}</Text>
+          ) : null}
         </View>
-        {tag ? <View className="px-2 py-1 rounded-full bg-emerald-50"><Text className="text-[10px] font-black text-emerald-700">{tag}</Text></View> : null}
       </View>
     </TouchableOpacity>
   );

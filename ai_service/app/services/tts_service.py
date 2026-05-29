@@ -9,14 +9,27 @@ from app.core.config import settings
 from app.models.schemas import TtsResult
 
 
+TTS_VOICE_MAP = {
+    "en": "en-IN-NeerjaNeural",
+    "hi": "hi-IN-SwaraNeural",
+    "kn": "kn-IN-SapnaNeural",
+    "mr": "mr-IN-AarohiNeural",
+    "ta": "ta-IN-PallaviNeural",
+    "te": "te-IN-ShrutiNeural",
+}
+
+
 class TextToSpeechService:
-    async def synthesize(self, text: str) -> TtsResult:
+    async def synthesize(self, text: str, language: str = "en") -> TtsResult:
         if not text.strip() or edge_tts is None:
             return TtsResult(audio_base64="", audio_mime_type="audio/mpeg")
 
+        lang_code = (language or "en").lower().split("-")[0]
+        voice = TTS_VOICE_MAP.get(lang_code, getattr(settings, "TTS_VOICE", "en-IN-NeerjaNeural"))
+
         communicate = edge_tts.Communicate(
             text=text,
-            voice=getattr(settings, "TTS_VOICE", "en-US-JennyNeural"),
+            voice=voice,
         )
 
         audio_chunks: list[bytes] = []

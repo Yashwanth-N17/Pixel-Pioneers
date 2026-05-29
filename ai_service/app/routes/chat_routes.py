@@ -91,7 +91,7 @@ async def chat_voice(
 async def chat_tts(request: TextToSpeechRequest) -> dict[str, str]:
     try:
         tts = TextToSpeechService()
-        result = await tts.synthesize(request.text)
+        result = await tts.synthesize(request.text, language=request.language)
         if not result.audio_base64:
             raise HTTPException(status_code=503, detail="Text-to-speech is not available.")
         return {
