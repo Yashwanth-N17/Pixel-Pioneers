@@ -68,18 +68,33 @@ def _fallback_reply(intent: str, language: str) -> str:
 
 
 def _extract_transactions_rule_based(text: str) -> list[dict[str, Any]]:
+    """Rule-based fallback: handles plain numbers AND Indian comma-formatted numbers (10,000 / 1,00,000)."""
     transactions = []
-    for match in re.finditer(r"(?:rs\.?|inr|rupees)?\s*(\d+(?:\.\d+)?)", text.lower()):
-        amount = float(match.group(1))
-        window = text[max(0, match.start() - 35): match.end() + 35].lower()
-        tx_type = "income" if any(word in window for word in ["earned", "received", "income", "salary", "mila", "kamaya"]) else "expense"
+    # Match optional Rs/INR prefix, then number with optional Indian-style commas
+    pattern = r"(?:rs\.?|inr|rupees)?\s*([\d,]+(?:\.\d+)?)"
+    for match in re.finditer(pattern, text.lower()):
+        raw_number = match.group(1).replace(",", "")  # strip commas: "10,000" -> "10000"
+        try:
+            amount = float(raw_number)
+        except ValueError:
+            continue
+        if amount <= 0:
+            continue
+        window = text[max(0, match.start() - 40): match.end() + 40].lower()
+        # Determine income vs expense from surrounding context
+        income_words = ["earned", "earn", "received", "receive", "income", "salary",
+                        "profit", "gain", "sale", "sold", "mila", "kamaya", "aaya",
+                        "bikri", "huvike", "laabha", "vantige", "sikkitu"]
+        tx_type = "income" if any(word in window for word in income_words) else "expense"
         category = "General"
-        if any(word in window for word in ["food", "grocery", "rice", "vegetable"]):
+        if any(word in window for word in ["food", "grocery", "rice", "vegetable", "sabzi"]):
             category = "Food"
-        elif any(word in window for word in ["fuel", "bus", "transport"]):
+        elif any(word in window for word in ["fuel", "bus", "transport", "petrol", "auto"]):
             category = "Transport"
-        elif any(word in window for word in ["seed", "fertilizer", "farm"]):
+        elif any(word in window for word in ["seed", "fertilizer", "farm", "crop", "khet"]):
             category = "Farming"
+        elif any(word in window for word in ["milk", "dairy"]):
+            category = "Dairy"
         transactions.append({"type": tx_type, "amount": amount, "category": category, "note": window.strip()})
     return transactions
 
@@ -89,14 +104,21 @@ async def extract_expenses_from_text(text: str, language: str = "en") -> list[di
         return _extract_transactions_rule_based(text)
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-    prompt = f"""Extract expense or income entries from this text. The text is in {language} language, but return the category and note in English.
-Return only JSON shaped like:
+    prompt = f"""You are a financial data extractor. Extract ALL expense or income entries mentioned in the text below.
+The text is in {language} language. Return category and note in English.
+
+Rules:
+- "type" must be exactly "expense" or "income"
+- If the user says earned / received / sold / profit / salary / income → type is "income"
+- If the user says spent / bought / paid / expense / cost → type is "expense"
+- "amount" must be a plain number (no commas, e.g. 10000 not 10,000)
+- If no money amount is found, return {{"transactions":[]}}
+
+Return ONLY valid JSON shaped like:
 {{"transactions": [
-  {{"type": "expense", "amount": 120, "category": "Food", "note": "rice"}},
-  {{"type": "income", "amount": 2000, "category": "General", "note": "earned salary"}}
+  {{"type": "income", "amount": 10000, "category": "General", "note": "earned from work"}},
+  {{"type": "expense", "amount": 500, "category": "Food", "note": "rice purchase"}}
 ]}}
-The "type" field must be exactly "expense" or "income".
-If no money amount is found, return {{"transactions":[]}}.
 
 Text: {text}"""
 
@@ -140,8 +162,11 @@ async def process_chat_message(message: str, language: str, user_context: dict[s
         except Exception as exc:
             logger.warning("[CHAT] Groq chat failed, using fallback: %s", exc)
 
+    # Extract transactions if message mentions any money-related content
+    # (runs for expense_tracking intent OR if message contains a numeric amount pattern)
     detected_expenses = []
-    if intent == "expense_tracking":
+    _has_amount = bool(re.search(r"(?:rs\.?|inr|rupees|\brs\b)[\s]?[\d,]+|\b\d[\d,]*\b", message.lower()))
+    if intent == "expense_tracking" or _has_amount:
         detected_expenses = await extract_expenses_from_text(message, language)
 
     return {
