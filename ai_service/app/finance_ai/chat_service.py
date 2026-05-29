@@ -15,8 +15,48 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "llama-3.1-8b-instant"
 
+# ─────────────────────────────────────────
+# Type-detection keyword sets
+# ─────────────────────────────────────────
+_INCOME_KEYWORDS = frozenset([
+    "earned", "earn", "earning", "received", "receive", "income", "salary",
+    "profit", "gain", "sale", "sold", "got paid", "payment received",
+    "mila", "kamaya", "aaya", "bikri", "huvike", "laabha", "vantige", "sikkitu",
+])
+_EXPENSE_KEYWORDS = frozenset([
+    "spent", "spend", "bought", "buy", "paid", "pay", "expense", "cost",
+    "purchased", "purchase", "bill", "grocery", "fuel", "rent", "food",
+    "kharcha", "kharch", "kharida", "diya", "kotte", "nasta", "kharchi",
+])
 
-def build_system_prompt(user_context: dict[str, Any], language: str) -> str:
+
+def _is_type_clear(text: str) -> bool:
+    """Return True if the message clearly states income or expense type."""
+    t = text.lower()
+    return any(w in t for w in _INCOME_KEYWORDS) or any(w in t for w in _EXPENSE_KEYWORDS)
+
+
+def _detect_first_amount(text: str) -> float | None:
+    """Return the first monetary amount found (handles Indian comma format)."""
+    m = re.search(r"(?:rs\.?|inr|rupees)?\s*([\d,]+(?:\.\d+)?)", text.lower())
+    if m:
+        try:
+            val = float(m.group(1).replace(",", ""))
+            return val if val > 0 else None
+        except ValueError:
+            return None
+    return None
+
+
+# ─────────────────────────────────────────
+# System prompt builders
+# ─────────────────────────────────────────
+def build_system_prompt(
+    user_context: dict[str, Any],
+    language: str,
+    ask_clarification: bool = False,
+    pending_amount: float | None = None,
+) -> str:
     language_instruction = {
         "en": "Respond only in English.",
         "hi": "Respond only in Hindi.",
@@ -25,6 +65,16 @@ def build_system_prompt(user_context: dict[str, Any], language: str) -> str:
         "ta": "Respond only in Tamil.",
         "mr": "Respond only in Marathi.",
     }.get(language, "Respond only in English.")
+
+    clarification_hint = ""
+    if ask_clarification and pending_amount is not None:
+        clarification_hint = (
+            f"\n\nIMPORTANT: The user mentioned an amount of Rs {pending_amount:,.0f} but did NOT specify "
+            "whether it is income or an expense. You MUST ask them exactly once: "
+            "'Is Rs {amount:,.0f} income or an expense?' — do not save anything yet.".format(
+                amount=pending_amount
+            )
+        )
 
     return f"""You are ArthSaathi, a warm rural financial assistant for India.
 {language_instruction}
@@ -37,8 +87,8 @@ User profile:
 - Repayment habit: {user_context.get("repayment_habit", "unknown")}
 
 Give simple, practical advice about budgeting, expenses, loans, savings, and scam safety.
-If the user mentions an income or expense amount, assure them that you have automatically saved it to their ledger.
-Keep the reply short, clear, and respectful. Never recommend specific stocks or trading."""
+If the user clearly states income or an expense amount, assure them it has been saved to their ledger.
+Keep the reply short, clear, and respectful. Never recommend specific stocks or trading.{clarification_hint}"""
 
 
 def build_suggestions(intent: str) -> list[str]:
@@ -67,13 +117,15 @@ def _fallback_reply(intent: str, language: str) -> str:
     return replies.get(intent, replies["general"])
 
 
+# ─────────────────────────────────────────
+# Rule-based transaction extractor
+# ─────────────────────────────────────────
 def _extract_transactions_rule_based(text: str) -> list[dict[str, Any]]:
     """Rule-based fallback: handles plain numbers AND Indian comma-formatted numbers (10,000 / 1,00,000)."""
     transactions = []
-    # Match optional Rs/INR prefix, then number with optional Indian-style commas
     pattern = r"(?:rs\.?|inr|rupees)?\s*([\d,]+(?:\.\d+)?)"
     for match in re.finditer(pattern, text.lower()):
-        raw_number = match.group(1).replace(",", "")  # strip commas: "10,000" -> "10000"
+        raw_number = match.group(1).replace(",", "")
         try:
             amount = float(raw_number)
         except ValueError:
@@ -81,11 +133,7 @@ def _extract_transactions_rule_based(text: str) -> list[dict[str, Any]]:
         if amount <= 0:
             continue
         window = text[max(0, match.start() - 40): match.end() + 40].lower()
-        # Determine income vs expense from surrounding context
-        income_words = ["earned", "earn", "received", "receive", "income", "salary",
-                        "profit", "gain", "sale", "sold", "mila", "kamaya", "aaya",
-                        "bikri", "huvike", "laabha", "vantige", "sikkitu"]
-        tx_type = "income" if any(word in window for word in income_words) else "expense"
+        tx_type = "income" if any(word in window for word in _INCOME_KEYWORDS) else "expense"
         category = "General"
         if any(word in window for word in ["food", "grocery", "rice", "vegetable", "sabzi"]):
             category = "Food"
@@ -99,6 +147,9 @@ def _extract_transactions_rule_based(text: str) -> list[dict[str, Any]]:
     return transactions
 
 
+# ─────────────────────────────────────────
+# Groq-powered transaction extractor
+# ─────────────────────────────────────────
 async def extract_expenses_from_text(text: str, language: str = "en") -> list[dict[str, Any]]:
     if not settings.GROQ_API_KEY or AsyncGroq is None:
         return _extract_transactions_rule_based(text)
@@ -141,18 +192,49 @@ Text: {text}"""
     return _extract_transactions_rule_based(text)
 
 
+# ─────────────────────────────────────────
+# Main entry point
+# ─────────────────────────────────────────
 async def process_chat_message(message: str, language: str, user_context: dict[str, Any]) -> dict[str, Any]:
     intent = classify_intent(message, language)
     logger.info("[CHAT] intent=%s language=%s", intent, language)
 
+    # ── Decide whether to extract immediately or ask for clarification ──
+    _amount_pattern = r"(?:rs\.?|inr|rupees[\s]?)[\s]?[\d,]+|(?<!\w)\d[\d,]{2,}"
+    _has_amount = bool(re.search(_amount_pattern, message.lower()))
+
+    requires_clarification = False
+    pending_transaction: dict[str, Any] | None = None
+    detected_expenses: list[dict[str, Any]] = []
+
+    if _has_amount:
+        if _is_type_clear(message):
+            # User clearly stated income or expense → extract and auto-save
+            detected_expenses = await extract_expenses_from_text(message, language)
+            logger.info("[CHAT] Auto-extracted %d transaction(s)", len(detected_expenses))
+        else:
+            # Amount found but type is ambiguous → ask once
+            amount = _detect_first_amount(message)
+            if amount:
+                requires_clarification = True
+                pending_transaction = {"amount": amount, "category": "General"}
+                logger.info("[CHAT] Ambiguous amount Rs %s — requesting clarification", amount)
+
+    # ── Generate AI reply (with clarification hint if needed) ──
     ai_reply = _fallback_reply(intent, language)
     if settings.GROQ_API_KEY and AsyncGroq is not None:
         client = AsyncGroq(api_key=settings.GROQ_API_KEY)
         try:
+            system_prompt = build_system_prompt(
+                user_context,
+                language,
+                ask_clarification=requires_clarification,
+                pending_amount=pending_transaction["amount"] if pending_transaction else None,
+            )
             response = await client.chat.completions.create(
                 model=settings.GROQ_CHAT_MODEL or DEFAULT_MODEL,
                 messages=[
-                    {"role": "system", "content": build_system_prompt(user_context, language)},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message},
                 ],
                 max_tokens=400,
@@ -162,17 +244,12 @@ async def process_chat_message(message: str, language: str, user_context: dict[s
         except Exception as exc:
             logger.warning("[CHAT] Groq chat failed, using fallback: %s", exc)
 
-    # Extract transactions if message mentions any money-related content
-    # (runs for expense_tracking intent OR if message contains a numeric amount pattern)
-    detected_expenses = []
-    _has_amount = bool(re.search(r"(?:rs\.?|inr|rupees|\brs\b)[\s]?[\d,]+|\b\d[\d,]*\b", message.lower()))
-    if intent == "expense_tracking" or _has_amount:
-        detected_expenses = await extract_expenses_from_text(message, language)
-
     return {
         "response": ai_reply,
         "intent": intent,
         "language": language,
         "detected_expenses": detected_expenses,
         "suggestions": build_suggestions(intent),
+        "requires_clarification": requires_clarification,
+        "pending_transaction": pending_transaction,
     }

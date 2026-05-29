@@ -148,8 +148,11 @@ const handleTextMessage = async (userId, { message, language, context }) => {
     detectedIntent
   );
 
-  // Auto-record transactions via the transactions service
-  const transactionsAdded = await processDetectedExpenses(userId, aiResponse?.detected_expenses);
+  // Auto-record transactions only when type is unambiguous
+  const needsClarification = aiResponse?.requires_clarification === true;
+  const transactionsAdded = needsClarification
+    ? false
+    : await processDetectedExpenses(userId, aiResponse?.detected_expenses);
   const actionTriggers = transactionsAdded ? ["TRANSACTION_ADDED"] : [];
 
   return {
@@ -159,6 +162,8 @@ const handleTextMessage = async (userId, { message, language, context }) => {
     detectedExpenses: aiResponse?.detected_expenses || null,
     suggestions: aiResponse?.suggestions || null,
     actionTriggers,
+    requiresClarification: needsClarification,
+    pendingTransaction: aiResponse?.pending_transaction || null,
   };
 };
 
@@ -224,8 +229,11 @@ const handleVoiceMessage = async (userId, audioBuffer, mimetype, language) => {
     detectedIntent
   );
 
-  // Auto-record transactions via the transactions service
-  const transactionsAdded = await processDetectedExpenses(userId, aiResponse?.detected_expenses);
+  // Auto-record transactions only when type is unambiguous
+  const needsClarification = aiResponse?.requires_clarification === true;
+  const transactionsAdded = needsClarification
+    ? false
+    : await processDetectedExpenses(userId, aiResponse?.detected_expenses);
   const actionTriggers = transactionsAdded ? ["TRANSACTION_ADDED"] : [];
 
   return {
@@ -236,6 +244,8 @@ const handleVoiceMessage = async (userId, audioBuffer, mimetype, language) => {
     detectedExpenses: aiResponse?.detected_expenses || null,
     suggestions: aiResponse?.suggestions || null,
     actionTriggers,
+    requiresClarification: needsClarification,
+    pendingTransaction: aiResponse?.pending_transaction || null,
   };
 };
 

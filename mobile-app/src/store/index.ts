@@ -72,6 +72,7 @@ type Store = PrimaryRegistrationData & {
   setToken: (t: string | null) => void;
   setUser: (u: User | null) => void;
   fetchDashboardData: () => Promise<void>;
+  fetchTransactions: () => Promise<void>;
   fetchActiveLoans: () => Promise<void>;
 
   addTransaction: (t: Omit<Transaction, 'id' | 'date'> & { date?: string }) => void;
@@ -134,6 +135,17 @@ export const useStore = create<Store>((set) => ({
       }
     } catch (error) {
       console.warn('Failed to fetch dashboard data', error);
+    }
+  },
+
+  fetchTransactions: async () => {
+    try {
+      const res = await endpoints.getTransactions();
+      if (Array.isArray(res.data?.data)) {
+        set({ transactions: res.data.data });
+      }
+    } catch (error) {
+      console.warn('Failed to fetch transactions', error);
     }
   },
 

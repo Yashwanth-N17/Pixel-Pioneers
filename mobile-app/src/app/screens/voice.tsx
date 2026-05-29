@@ -51,7 +51,9 @@ export default function VoiceScreen() {
   const occupation = useStore((state) => state.occupation);
   const language = useStore((state) => state.language);
   const fetchDashboardData = useStore((state) => state.fetchDashboardData);
+  const fetchTransactions = useStore((state) => state.fetchTransactions);
   const [prompt, setPrompt] = useState('');
+  const [pendingTransaction, setPendingTransaction] = useState<{ amount: number; category: string } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'ai',
@@ -135,8 +137,16 @@ export default function VoiceScreen() {
       
       console.warn("AI TEXT CHAT RESPONSE:", JSON.stringify(response.data?.data));
 
-      if (response.data?.data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
+      const data = response.data?.data;
+      if (data?.requiresClarification && data?.pendingTransaction) {
+        setPendingTransaction(data.pendingTransaction);
+      } else {
+        setPendingTransaction(null);
+      }
+
+      if (data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
         void fetchDashboardData();
+        void fetchTransactions();
       }
     } catch (error) {
       console.warn('Chat message failed', error);
@@ -184,8 +194,15 @@ export default function VoiceScreen() {
 
       console.warn("AI VOICE CHAT RESPONSE:", JSON.stringify(data));
 
+      if (data?.requiresClarification && data?.pendingTransaction) {
+        setPendingTransaction(data.pendingTransaction);
+      } else {
+        setPendingTransaction(null);
+      }
+
       if (data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
         void fetchDashboardData();
+        void fetchTransactions();
       }
     } catch (error) {
       console.warn('Voice message failed', error);
@@ -374,6 +391,36 @@ export default function VoiceScreen() {
             <Text className="font-black text-emerald-700">Speaking...</Text>
           </TouchableOpacity>
         ) : null}
+
+        {/* ── Clarification quick-reply buttons ── */}
+        {pendingTransaction && (
+          <View className="px-4 pb-2 flex-row gap-3">
+            <TouchableOpacity
+              onPress={() => {
+                const msg = `It is income of Rs ${pendingTransaction.amount}`;
+                setPendingTransaction(null);
+                setPrompt(msg);
+                setTimeout(() => ask(), 50);
+              }}
+              className="flex-1 h-11 flex-row items-center justify-center gap-2 rounded-2xl bg-emerald-500"
+            >
+              <Feather name="arrow-down-circle" size={16} color="#fff" />
+              <Text className="text-white font-black text-sm">💰 Income</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                const msg = `It is an expense of Rs ${pendingTransaction.amount}`;
+                setPendingTransaction(null);
+                setPrompt(msg);
+                setTimeout(() => ask(), 50);
+              }}
+              className="flex-1 h-11 flex-row items-center justify-center gap-2 rounded-2xl bg-rose-500"
+            >
+              <Feather name="arrow-up-circle" size={16} color="#fff" />
+              <Text className="text-white font-black text-sm">💸 Expense</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View className="bg-white rounded-2xl border border-slate-200 p-2 flex-row items-center">
           <TextInput
