@@ -10,6 +10,18 @@ import type {
   Transaction,
   User,
 } from '../types';
+import { endpoints } from '../services/api';
+
+export type DashboardData = {
+  totalIncome: number;
+  totalExpenses: number;
+  totalSavings: number;
+  netBalance: number;
+  monthly: { income: number; expense: number; saving: number };
+  recentTransactions: Transaction[];
+  financialSummary: { status: string; savingsRate: string; message: string };
+};
+
 
 export type Occupation = 'FARMER' | 'SHOP_OWNER' | 'TAILOR' | 'DAILY_WAGE';
 export type RepaymentHabit = 'Never Missed' | 'Sometimes Delayed' | 'Frequently Missed';
@@ -55,9 +67,13 @@ type Store = PrimaryRegistrationData & {
   isRegistered: boolean;
   loans: Loan[];
   onboardingInputMode: OnboardingInputMode;
+  dashboardData: DashboardData | null;
 
   setToken: (t: string | null) => void;
   setUser: (u: User | null) => void;
+  fetchDashboardData: () => Promise<void>;
+  fetchActiveLoans: () => Promise<void>;
+
   addTransaction: (t: Omit<Transaction, 'id' | 'date'> & { date?: string }) => void;
   setTransactions: (txs: Transaction[]) => void;
   removeTransaction: (id: string) => void;
@@ -91,24 +107,7 @@ export const useStore = create<Store>((set) => ({
   ...defaultRegistration,
   token: null,
   user: null,
-  transactions: [
-    {
-      id: 'm1',
-      type: 'income',
-      amount: 7800,
-      category: 'Crop Sale',
-      note: 'Tomato crate settlement',
-      date: '2026-05-21',
-    },
-    {
-      id: 'm2',
-      type: 'expense',
-      amount: 1450,
-      category: 'Seeds',
-      note: 'Vegetable seeds and trays',
-      date: '2026-05-19',
-    },
-  ],
+  transactions: [],
   notifications: [],
   aiMessages: [],
   language: 'English',
@@ -123,42 +122,53 @@ export const useStore = create<Store>((set) => ({
   onboarded: false,
   isLoggedIn: false,
   isRegistered: false,
-  loans: [
-    {
-      id: 'loan-1',
-      type: 'borrowed',
-      personName: 'SBI Kisan Branch',
-      amount: 50000,
-      remainingAmount: 18500,
-      interestRate: 10.5,
-      dueDate: '2026-06-12',
-      status: 'active',
-      date: '2026-01-18',
-    },
-    {
-      id: 'loan-2',
-      type: 'borrowed',
-      personName: 'Krishi Cooperative Bank',
-      amount: 32000,
-      remainingAmount: 12400,
-      interestRate: 9.2,
-      dueDate: '2026-05-30',
-      status: 'overdue',
-      date: '2026-02-04',
-    },
-    {
-      id: 'loan-3',
-      type: 'borrowed',
-      personName: 'Village Trader Ramesh',
-      amount: 14000,
-      remainingAmount: 4200,
-      interestRate: 18,
-      dueDate: '2026-06-05',
-      status: 'active',
-      date: '2026-03-15',
-    },
-  ],
+  loans: [],
   onboardingInputMode: 'TEXT',
+  dashboardData: null,
+
+  fetchDashboardData: async () => {
+    try {
+      const res = await endpoints.getDashboard();
+      if (res.data?.data) {
+        set({ dashboardData: res.data.data });
+      }
+    } catch (error) {
+      console.warn('Failed to fetch dashboard data', error);
+    }
+  },
+
+  fetchActiveLoans: async () => {
+    try {
+      const res = await endpoints.getLoanHistory();
+      if (res.data?.data) {
+        // Map backend LoanAnalysis to local Loan format if needed, or just store it.
+        // For simplicity, we convert to Loan format so the UI doesn't break
+        const fetchedLoans = res.data.data.map((l: any) => ({
+          id: l.id,
+          type: 'borrowed',
+          personName: 'Loan Provider',
+          amount: l.requestedLoanAmount,
+          remainingAmount: l.requestedLoanAmount, // Just for mock UI
+          interestRate: l.interestRate,
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+          status: 'active',
+          date: l.createdAt,
+        }));
+        
+        // Also update loanRisk based on recent analysis
+        let risk: LoanRisk = 'safe';
+        if (res.data.data.length > 0) {
+          const r = res.data.data[0].riskLevel;
+          if (r === 'HIGH' || r === 'VERY_HIGH') risk = 'high';
+          else if (r === 'MODERATE') risk = 'moderate';
+        }
+        
+        set({ loans: fetchedLoans, loanRisk: risk });
+      }
+    } catch (error) {
+      console.warn('Failed to fetch active loans', error);
+    }
+  },
 
   setToken: (t) => set({ token: t }),
   setUser: (u) => set({ user: u }),
@@ -256,11 +266,31 @@ export const useStore = create<Store>((set) => ({
       pastRepaymentHabit: 'Never Missed',
       transactions: [],
       loans: [],
+      dashboardData: null,
     }),
 }));
 
 export const useTotals = () => {
+  const dashboardData = useStore((s) => s.dashboardData);
   const tx = useStore((s) => s.transactions);
+  
+  if (dashboardData) {
+    const { totalIncome: income, totalExpenses: expense, totalSavings, netBalance: savings } = dashboardData;
+    let score = 45;
+    if (dashboardData.financialSummary?.savingsRate) {
+       const sr = parseFloat(dashboardData.financialSummary.savingsRate);
+       score = Math.max(0, Math.min(100, Math.round(sr + 45)));
+    } else if (dashboardData.financialSummary?.status === 'healthy') {
+      score = 80;
+    } else if (dashboardData.financialSummary?.status === 'stable') {
+      score = 60;
+    } else {
+      score = 30;
+    }
+    return { income, expense, savings, score };
+  }
+
+  // Fallback if dashboardData is null
   const income = tx
     .filter((t) => t.type === 'income')
     .reduce((a, b) => a + b.amount, 0);

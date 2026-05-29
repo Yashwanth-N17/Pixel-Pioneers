@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { endpoints } from '../../services/api';
 
 import type {
   AiBudgetPlan,
@@ -33,6 +34,7 @@ type BudgetState = {
   setEmergencyFund: (plan: EmergencyFundPlan) => void;
   addEducationPlan: (plan: EducationPlan) => void;
   setGoldSavingsData: (plan: GoldSavingsPlan) => void;
+  syncBudgetWithBackend: () => Promise<void>;
   snapshot: () => BudgetSnapshot;
 };
 
@@ -76,6 +78,45 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
   addEducationPlan: (plan) =>
     set((state) => ({ educationPlans: [plan, ...state.educationPlans] })),
   setGoldSavingsData: (plan) => set({ goldSavingsData: plan }),
+  
+  syncBudgetWithBackend: async () => {
+    try {
+      const state = get();
+      const income = state.incomeSources.reduce((s, i) => s + i.amount, 0);
+      const expense = state.expenses.reduce((s, i) => s + i.amount, 0);
+      
+      const [ai, emergency, edu, gold, cf, season] = await Promise.allSettled([
+        endpoints.budgetPlan({ totalIncome: income, totalExpenses: expense }),
+        endpoints.emergencyFund({ targetAmount: 50000, currentSaved: 10000 }),
+        endpoints.educationPlan({ childAge: 5, targetYear: 2035, estimatedFutureCost: 200000 }),
+        endpoints.goldPlan({ savingsAmount: 1000 }),
+        endpoints.cashflowForecast({}),
+        endpoints.seasonalIncome({})
+      ]);
+
+      if (ai.status === 'fulfilled' && ai.value?.data?.data) {
+        set({ aiPlan: ai.value.data.data });
+      }
+      if (emergency.status === 'fulfilled' && emergency.value?.data?.data) {
+        set({ emergencyFund: emergency.value.data.data });
+      }
+      if (edu.status === 'fulfilled' && edu.value?.data?.data) {
+        set({ educationPlans: [edu.value.data.data] });
+      }
+      if (gold.status === 'fulfilled' && gold.value?.data?.data) {
+        set({ goldSavingsData: gold.value.data.data });
+      }
+      if (cf.status === 'fulfilled' && cf.value?.data?.data) {
+        set({ forecast: cf.value.data.data });
+      }
+      if (season.status === 'fulfilled' && season.value?.data?.data) {
+        set({ seasonalInsight: season.value.data.data });
+      }
+    } catch (e) {
+      console.warn('Failed to sync budget with backend', e);
+    }
+  },
+
   snapshot: () => {
     const state = get();
     const totalIncome = state.incomeSources.reduce((sum, item) => sum + item.amount, 0);
@@ -86,10 +127,10 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       recommendedSavings: state.aiPlan?.recommendedSavings ?? Math.max(0, totalIncome - totalExpenses),
       emergencyProgress: state.emergencyFund?.reserveTarget
         ? Math.min(1, (state.emergencyFund.currentSaved || 0) / state.emergencyFund.reserveTarget)
-        : 0.18,
+        : 0,
       educationProgress: state.educationPlans[0]?.estimatedFutureCost
         ? Math.min(1, (state.educationPlans[0].savedAmount || 0) / state.educationPlans[0].estimatedFutureCost)
-        : 0.12,
+        : 0,
       goldValue: state.goldSavingsData?.estimatedGrowth ?? 0,
     };
   },
@@ -118,10 +159,10 @@ export function useBudgetSnapshot() {
   const recommendedSavings = aiRecommendedSavings ?? Math.max(0, totalIncome - totalExpenses);
   const emergencyProgress = emergencyReserveTarget
     ? Math.min(1, (emergencyCurrentSaved || 0) / emergencyReserveTarget)
-    : 0.18;
+    : 0;
   const educationProgress = educationFutureCost
     ? Math.min(1, (educationSaved || 0) / educationFutureCost)
-    : 0.12;
+    : 0;
 
   return { totalIncome, totalExpenses, recommendedSavings, emergencyProgress, educationProgress, goldValue };
 }

@@ -44,6 +44,9 @@ export default function HomeScreen() {
   const { income, expense, savings, score } = useTotals();
   const occupation = useStore((s) => s.occupation);
   const transactions = useStore((s) => s.transactions);
+  const dashboardData = useStore((s) => s.dashboardData);
+  const fetchDashboardData = useStore((s) => s.fetchDashboardData);
+  const fetchActiveLoans = useStore((s) => s.fetchActiveLoans);
   const setTransactions = useStore((s) => s.setTransactions);
   const unread = useStore((s) => s.notifications.filter((n) => !n.read).length);
   const user = useStore((s: any) => s.user);
@@ -57,21 +60,30 @@ export default function HomeScreen() {
     ?? t.locationNotSet;
   const displayName = user?.name || 'User';
 
-  const fetchTransactions = async () => {
+  const fetchDashboard = async () => {
     try {
+      await fetchDashboardData();
+      await fetchActiveLoans();
       const res = await endpoints.getTransactions();
       setTransactions(res.data.data);
     } catch (error) {
-      console.warn('Failed to fetch transactions', error);
+      console.warn('Failed to fetch dashboard', error);
     }
   };
 
   React.useEffect(() => {
-    fetchTransactions();
+    fetchDashboard();
   }, []);
 
-  // Calculate real monthly spending dynamically from backend data
+  // Calculate real monthly spending dynamically from backend data if dashboardData is null
   const monthly = useMemo(() => {
+    if (dashboardData?.monthly) {
+      return [
+        { m: 'Income', v: dashboardData.monthly.income },
+        { m: 'Expense', v: dashboardData.monthly.expense },
+        { m: 'Saving', v: dashboardData.monthly.saving },
+      ];
+    }
     const result = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
@@ -85,14 +97,15 @@ export default function HomeScreen() {
       result.push({ m: monthName, v: total });
     }
     return result;
-  }, [transactions]);
+  }, [transactions, dashboardData]);
 
-  const recentTx = transactions.slice(0, 3);
-  const eligible = Math.max(10000, Math.round((savings * 6) / 1000) * 1000);
+  const recentTx = dashboardData?.recentTransactions || transactions.slice(0, 3);
+  const loans = useStore((s) => s.loans);
+  const eligibleAmount = loans.length > 0 ? loans[0].amount : Math.max(10000, Math.round((savings * 6) / 1000) * 1000);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchTransactions();
+    await fetchDashboard();
     setRefreshing(false);
   };
 
@@ -161,7 +174,13 @@ export default function HomeScreen() {
                 {t.financialHealth}
               </Text>
               <Text style={{ fontSize: 18, fontWeight: '900', color: '#fff', marginTop: 2 }}>
-                {score > 70 ? `✅ ${t.excellent}` : score > 40 ? `⚠️ ${t.good}` : `🔴 ${t.needsAttention}`}
+                {dashboardData?.financialSummary?.status === 'healthy' 
+                  ? `✅ ${t.excellent}` 
+                  : dashboardData?.financialSummary?.status === 'stable' 
+                  ? `⚠️ ${t.good}` 
+                  : dashboardData?.financialSummary?.status === 'deficit'
+                  ? `🔴 ${t.needsAttention}`
+                  : score > 70 ? `✅ ${t.excellent}` : score > 40 ? `⚠️ ${t.good}` : `🔴 ${t.needsAttention}`}
               </Text>
             </View>
           </View>

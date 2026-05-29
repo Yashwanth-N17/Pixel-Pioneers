@@ -24,8 +24,11 @@ export default function BudgetDashboardScreen() {
   const forecast = useBudgetStore((state) => state.forecast);
   const seasonalInsight = useBudgetStore((state) => state.seasonalInsight);
   const aiPlan = useBudgetStore((state) => state.aiPlan);
+  const syncBudgetWithBackend = useBudgetStore((state) => state.syncBudgetWithBackend);
 
   React.useEffect(() => {
+    syncBudgetWithBackend();
+    
     let disconnect: undefined | (() => void);
     connectBudgetRealtime().then((connection) => {
       disconnect = connection?.disconnect;

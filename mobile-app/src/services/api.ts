@@ -257,6 +257,201 @@ export const endpoints = {
     api.get(`/shg/groups/${groupId}/notifications`),
 
   markShgNotificationRead: (notificationId: string) =>
+  (response) => {
+    console.log(
+      '[API][RES]',
+      response.status,
+      `${response.config.baseURL}${response.config.url}`,
+      redact(response.data)
+    );
+    return response;
+  },
+  (error) => {
+    console.log(
+      '[API][ERR]',
+      error?.response?.status ?? 'NO_RESPONSE',
+      error?.config ? `${error.config.baseURL}${error.config.url}` : 'unknown-url',
+      redact(error?.response?.data ?? error?.message)
+    );
+    return Promise.reject(error);
+  }
+);
+
+voiceApi.interceptors.request.use((config) => {
+  console.log('[VOICE][REQ]', config.method?.toUpperCase(), `${config.baseURL}${config.url}`);
+  return config;
+});
+
+voiceApi.interceptors.response.use(
+  (response) => {
+    console.log('[VOICE][RES]', response.status, `${response.config.baseURL}${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.log(
+      '[VOICE][ERR]',
+      error?.response?.status ?? 'NO_RESPONSE',
+      error?.config ? `${error.config.baseURL}${error.config.url}` : 'unknown-url',
+      error?.response?.data ?? error?.message
+    );
+    return Promise.reject(error);
+  }
+);
+
+// ─────────────────────────────────────────
+// Response unwrapper — returns `data` from
+// the standard { success, message, data } envelope
+// ─────────────────────────────────────────
+function unwrap<T = any>(promise: Promise<{ data: { data: T } }>) {
+  return promise.then((res) => res.data.data);
+}
+
+// ─────────────────────────────────────────
+// API Endpoints — matches backend spec exactly
+// ─────────────────────────────────────────
+export const endpoints = {
+
+  // ── Auth ────────────────────────────────
+  register: (body: {
+    name: string;
+    phone: string;
+    password: string;
+    email?: string;
+    language?: string;
+    village?: string;
+    district?: string;
+  }) => api.post('/auth/register', body),
+
+  login: (phone: string, password: string, village?: string, district?: string) =>
+    api.post('/auth/login', { phone, password, village, district }),
+
+  logout: () => api.post('/auth/logout'),
+
+  getMe: () => api.get('/auth/me'),
+
+  getMyProfile: () => api.get('/profile/me'),
+
+  // ── User ────────────────────────────────
+  getProfile: () => api.get('/users/profile'),
+
+  updateProfile: (body: Record<string, any>) =>
+    api.put('/profile/me', body),
+
+  createFarmerProfile: (data: any) => api.post('/profile/farmer', data),
+  createShopProfile: (data: any) => api.post('/profile/shop', data),
+  createTailorProfile: (data: any) => api.post('/profile/tailor', data),
+  createGenericProfile: (data: any) => api.post('/profile/generic', data),
+
+  // ── Transactions ────────────────────────
+  getTransactions: (params?: {
+    type?: string;
+    category?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => api.get('/transactions', { params }),
+
+  addTransaction: (body: {
+    amount: number;
+    type: string;      // income | expense | saving
+    category: string;
+    note?: string;
+    date?: string;
+  }) => api.post('/transactions', body),
+
+  getTransaction: (id: string) =>
+    api.get(`/transactions/${id}`),
+
+  updateTransaction: (id: string, body: Record<string, any>) =>
+    api.put(`/transactions/${id}`, body),
+
+  deleteTransaction: (id: string) =>
+    api.delete(`/transactions/${id}`),
+
+  // ── Ledger (profession-specific) ────────
+  /**
+   * Fetch all ledger entries for a given occupation.
+   * Returns { entries: Transaction[], grouped: Record<category, Transaction[]> }
+   */
+  getLedgerEntries: (occupation: 'FARMER' | 'SHOP_OWNER' | 'TAILOR' | 'DAILY_WAGE') =>
+    api.get('/transactions/ledger', { params: { occupation } }),
+
+  /**
+   * Add a ledger entry. Same as addTransaction but accepts `ledgerMeta`.
+   */
+  addLedgerEntry: (body: {
+    amount: number;
+    type: 'income' | 'expense' | 'saving';
+    category: string;
+    note?: string;
+    date?: string;
+    ledgerMeta?: Record<string, any>;
+  }) => api.post('/transactions', body),
+
+  /**
+   * Delete a ledger entry by transaction id.
+   */
+  deleteLedgerEntry: (id: string) =>
+    api.delete(`/transactions/${id}`),
+
+  // ── Dashboard ───────────────────────────
+  getDashboard: () => api.get('/dashboard'),
+
+  // ── SHG Digital Banking ─────────────────
+  createShgGroup: (body: {
+    name: string;
+    approvalThreshold?: number;
+  }) => api.post('/shg/groups', body),
+
+  joinShgGroup: (body: {
+    groupId?: string;
+    inviteCode?: string;
+  }) => api.post('/shg/groups/join', body),
+
+  getMyShgGroups: () => api.get('/shg/groups/my'),
+
+  getShgDashboard: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/dashboard`),
+
+  getShgMembers: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/members`),
+
+  getShgTransactions: (groupId: string, params?: {
+    type?: 'deposit' | 'withdrawal' | 'loan_repayment';
+    status?: 'pending' | 'approved' | 'rejected' | 'executed';
+  }) => api.get(`/shg/groups/${groupId}/transactions`, { params }),
+
+  createShgTransaction: (groupId: string, body: {
+    type: 'deposit' | 'withdrawal' | 'loan_repayment';
+    amount: number;
+    description?: string;
+    metadata?: Record<string, any>;
+  }) => api.post(`/shg/groups/${groupId}/transactions`, body),
+
+  getShgApprovals: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/approvals`),
+
+  approveShgTransaction: (transactionId: string, remarks?: string) =>
+    api.post(`/shg/transactions/${transactionId}/approve`, { remarks }),
+
+  rejectShgTransaction: (transactionId: string, remarks?: string) =>
+    api.post(`/shg/transactions/${transactionId}/reject`, { remarks }),
+
+  getShgProposals: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/proposals`),
+
+  createShgProposal: (groupId: string, body: {
+    title: string;
+    description?: string;
+    deadline?: string;
+  }) => api.post(`/shg/groups/${groupId}/proposals`, body),
+
+  voteShgProposal: (proposalId: string, vote: 'yes' | 'no') =>
+    api.post(`/shg/proposals/${proposalId}/vote`, { vote }),
+
+  getShgNotifications: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/notifications`),
+
+  markShgNotificationRead: (notificationId: string) =>
     api.patch(`/shg/notifications/${notificationId}/read`),
 
   getShgAuditLogs: (groupId: string) =>
@@ -269,6 +464,8 @@ export const endpoints = {
   scamDetection: (message: string) =>
     api.post('/ai/scam-detection', { message }),
 
+  getLoanHistory: () => api.get('/ai/loan-analysis/history'),
+
   loanAnalysis: (body: {
     requestedLoanAmount: number;
     expectedInterestRate: number;
@@ -276,6 +473,24 @@ export const endpoints = {
     loanPurpose: string;
     collateralValue?: number | null;
   }) => api.post('/ai/loan-analysis', body),
+
+  budgetPlan: (body?: Record<string, any>) =>
+    api.post('/ai/budget-plan', body),
+
+  emergencyFund: (body?: Record<string, any>) =>
+    api.post('/ai/emergency-fund', body),
+
+  educationPlan: (body?: Record<string, any>) =>
+    api.post('/ai/education-plan', body),
+
+  goldPlan: (body?: Record<string, any>) =>
+    api.post('/ai/gold-plan', body),
+
+  cashflowForecast: (body?: Record<string, any>) =>
+    api.post('/ai/cashflow-forecast', body),
+
+  seasonalIncome: (body?: Record<string, any>) =>
+    api.post('/ai/seasonal-income', body),
 
   // ── Chat / Voice Assistant ──────────────
   sendChatMessage: (body: {
