@@ -15,8 +15,8 @@ const envVoiceUrl = process.env.EXPO_PUBLIC_VOICE_URL;
 //   (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0] ||
 //   null;
 
-const fallbackApi = expoHost ? `http://${expoHost}:3000/api` : 'http://192.168.29.9:3000/api';
-const fallbackVoice = expoHost ? `http://${expoHost}:8001/api` : 'http://192.168.29.9:8001/api';
+const fallbackApi = 'http://10.60.229.1:3000/api';
+const fallbackVoice = 'http://10.60.229.1:8000/api';
 
 // Temporarily hardcoding to fallbacks to bypass stale .env variables
 const BASE = fallbackApi;
@@ -287,26 +287,19 @@ export const endpoints = {
 
   getRtcRecords: () => api.get('/rtc'),
 
-// ── Payments ─────────────────────────────────────────────
+// ── Payments (Mock Flow) ─────────────────────────────────────────────
 /**
- * Step 1: Call this when user taps "Pay" button.
- * Backend creates a Razorpay order and returns orderId + keyId.
+ * Process a mock payment checkout. Supports normal personal payments and SHG transactions.
+ * It auto-syncs to the personal ledger, and adds SHG transactions if shgGroupId is provided.
  */
-createPaymentOrder: (body: {
-  amount: number;        // In INR, e.g. 500 for ₹500
-  description?: string;  // e.g. "Groceries"
-  category?: string;     // e.g. "Food"
-}) => api.post('/payments/create-order', body),
-
-/**
- * Step 2: Call this after Razorpay checkout succeeds.
- * Verifies signature and records the transaction.
- */
-verifyPayment: (body: {
-  razorpay_order_id: string;
-  razorpay_payment_id: string;
-  razorpay_signature: string;
-}) => api.post('/payments/verify', body),
+processMockCheckout: (body: {
+  amount: number;
+  description?: string;
+  category?: string;
+  shgGroupId?: string;
+  shgTransactionType?: 'deposit' | 'loan_repayment';
+  repaymentDeadline?: string;
+}) => api.post('/payments/mock-checkout', body),
 
 /**
  * Get payment history (with optional filters).

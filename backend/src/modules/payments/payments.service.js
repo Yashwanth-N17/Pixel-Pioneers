@@ -1,15 +1,11 @@
 // src/modules/payments/payments.service.js
-// Core Razorpay payment logic
+// Mock payment logic
 
-const crypto = require("crypto");
-const razorpay = require("../../config/razorpay");
 const prisma = require("../../config/db");
-const environment = require("../../config/environment");
 const logger = require("../../utils/logger");
 
 // ─────────────────────────────────────────
 // HELPER — Generate unique receipt ID
-// Receipt ID must be unique per order and <= 40 chars
 // ─────────────────────────────────────────
 const generateReceipt = () => {
   const ts = Date.now().toString(36).toUpperCase(); // base36 timestamp
@@ -18,277 +14,135 @@ const generateReceipt = () => {
 };
 
 // ─────────────────────────────────────────
-// CREATE RAZORPAY ORDER
-// Called when user clicks "Pay" in the app
+// PROCESS MOCK CHECKOUT
 // ─────────────────────────────────────────
-/**
- * Creates a Razorpay order and stores it in the database.
- *
- * @param {string} userId - Authenticated user's ID
- * @param {number} amount - Amount in INR (e.g. 500 for ₹500)
- * @param {string} description - Optional payment description
- * @param {string} category - Optional expense category
- * @returns {object} - { orderId, amount, currency, keyId, receipt }
- */
-const createOrder = async (userId, amount, description, category) => {
-  // Convert INR to paise (Razorpay requires amount in smallest currency unit)
-  const amountPaise = Math.round(parseFloat(amount) * 100);
+const processMockCheckout = async (
+  userId,
+  amount,
+  description,
+  category,
+  shgGroupId,
+  shgTransactionType,
+  repaymentDeadline
+) => {
+  let finalAmount = parseFloat(amount);
+  let lateFeeApplied = null;
+
+  // 1. Calculate Late Fees if applicable
+  if (shgTransactionType === "loan_repayment" && repaymentDeadline) {
+    const deadline = new Date(repaymentDeadline);
+    const now = new Date();
+    
+    // Check if current date is past the deadline
+    if (now > deadline) {
+      const feeAmount = Math.round(finalAmount * 0.05); // 5% late fee
+      finalAmount += feeAmount;
+      lateFeeApplied = {
+        feeAmount,
+        originalAmount: parseFloat(amount),
+        totalAmount: finalAmount
+      };
+      logger.info(`[MOCK PAYMENT] Late fee applied: ${feeAmount} for user ${userId}`);
+    }
+  }
+
+  const amountPaise = Math.round(finalAmount * 100);
   const receipt = generateReceipt();
 
-  // Create order on Razorpay
-  const razorpayOrder = await razorpay.orders.create({
-    amount: amountPaise,
-    currency: "INR",
-    receipt: receipt,
-    notes: {
-      userId: userId,
-      description: description || "HealthSehat Payment",
-      category: category || "General",
-      appName: environment.app.name,
-    },
-  });
+  // Create a mock Razorpay order ID just to satisfy schema uniqueness
+  const mockOrderId = `order_mock_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+  const mockPaymentId = `pay_mock_${Date.now()}_${Math.floor(Math.random()*1000)}`;
 
-  logger.info(`[PAYMENT] Razorpay order created: ${razorpayOrder.id} for user: ${userId}`);
-
-  // Persist order in our database
-  const payment = await prisma.payment.create({
-    data: {
-      userId,
-      razorpayOrderId: razorpayOrder.id,
-      amount: parseFloat(amount),
-      amountPaise,
-      currency: "INR",
-      status: "created",
-      description: description || null,
-      category: category || null,
-      receipt,
-      razorpayOrderData: razorpayOrder,
-    },
-  });
-
-  logger.info(`[PAYMENT] Payment record created in DB: ${payment.id}`);
-
-  // Return only what frontend needs
-  return {
-    orderId: razorpayOrder.id,
-    amount: amountPaise,          // Razorpay checkout needs paise
-    amountInr: parseFloat(amount), // Human-readable INR amount
-    currency: "INR",
-    keyId: environment.razorpay.keyId, // Frontend needs this to open checkout
-    receipt,
-    paymentDbId: payment.id,
-  };
-};
-
-// ─────────────────────────────────────────
-// VERIFY PAYMENT
-// Called after Razorpay checkout completes
-// Verifies HMAC signature to prevent fraud
-// ─────────────────────────────────────────
-/**
- * Verifies the payment signature from Razorpay.
- * If valid, marks payment as paid and creates a transaction record.
- *
- * @param {string} userId
- * @param {string} razorpayOrderId  - order_XXXXXXX
- * @param {string} razorpayPaymentId - pay_XXXXXXX
- * @param {string} razorpaySignature - HMAC-SHA256 signature from Razorpay
- * @returns {object} - verified payment + created transaction
- */
-const verifyPayment = async (
-  userId,
-  razorpayOrderId,
-  razorpayPaymentId,
-  razorpaySignature
-) => {
-  // ── Step 1: Verify HMAC signature ────────
-  // Razorpay signs: SHA256(orderId + "|" + paymentId) using key_secret
-  const expectedSignature = crypto
-    .createHmac("sha256", environment.razorpay.keySecret)
-    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
-    .digest("hex");
-
-  if (expectedSignature !== razorpaySignature) {
-    logger.warn(
-      `[PAYMENT] Signature mismatch for order: ${razorpayOrderId}. Possible fraud attempt.`
-    );
-    const error = new Error("Payment verification failed. Invalid signature.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  logger.info(`[PAYMENT] Signature verified for order: ${razorpayOrderId}`);
-
-  // ── Step 2: Find payment record in DB ────
-  const payment = await prisma.payment.findUnique({
-    where: { razorpayOrderId },
-  });
-
-  if (!payment) {
-    const error = new Error("Payment order not found.");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (payment.userId !== userId) {
-    const error = new Error("Unauthorized payment verification.");
-    error.statusCode = 403;
-    throw error;
-  }
-
-  if (payment.status === "paid") {
-    // Already verified — return existing data (idempotent)
-    return { payment, alreadyVerified: true };
-  }
-
-  // ── Step 3: Fetch full payment details from Razorpay ──
-  let razorpayPaymentData = null;
-  let paymentMethod = "unknown";
-
-  try {
-    razorpayPaymentData = await razorpay.payments.fetch(razorpayPaymentId);
-    paymentMethod = razorpayPaymentData.method || "unknown";
-    logger.info(`[PAYMENT] Payment method: ${paymentMethod}`);
-  } catch (e) {
-    // Non-fatal — log and continue. We already have signature proof.
-    logger.warn(`[PAYMENT] Could not fetch payment details from Razorpay: ${e.message}`);
-  }
-
-  // ── Step 4: Create a Transaction record ──
-  // This integrates payment into the existing transaction/analytics system
-  const transaction = await prisma.transaction.create({
-    data: {
-      userId,
-      amount: payment.amount,
-      type: "expense",
-      category: payment.category || "Payment",
-      note: payment.description || `Payment via Razorpay (${razorpayPaymentId})`,
-      date: new Date(),
-      ledgerMeta: {
-        razorpayOrderId,
-        razorpayPaymentId,
-        paymentMethod,
-        receipt: payment.receipt,
+  // Start Transaction
+  return prisma.$transaction(async (tx) => {
+    // 2. Create Transaction in Personal Ledger
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        amount: finalAmount,
+        type: "expense", // paying out of personal account
+        category: category || (shgGroupId ? "SHG" : "Payment"),
+        note: description || `Mock Payment`,
+        date: new Date(),
+        ledgerMeta: {
+          mockOrderId,
+          mockPaymentId,
+          receipt,
+          ...(lateFeeApplied && { lateFeeApplied })
+        },
       },
-    },
-  });
-
-  logger.info(`[PAYMENT] Transaction record created: ${transaction.id}`);
-
-  // ── Step 5: Update payment record as paid ──
-  const updatedPayment = await prisma.payment.update({
-    where: { razorpayOrderId },
-    data: {
-      razorpayPaymentId,
-      razorpaySignature,
-      status: "paid",
-      method: paymentMethod,
-      razorpayPaymentData: razorpayPaymentData || {},
-      transactionId: transaction.id,
-      updatedAt: new Date(),
-    },
-  });
-
-  logger.info(`[PAYMENT] Payment marked as paid: ${updatedPayment.id}`);
-
-  return {
-    payment: updatedPayment,
-    transaction,
-    alreadyVerified: false,
-  };
-};
-
-// ─────────────────────────────────────────
-// HANDLE WEBHOOK
-// Called by Razorpay server-to-server for async events
-// ─────────────────────────────────────────
-/**
- * Processes Razorpay webhook events.
- * Webhook signature is verified using rawBody (Buffer).
- *
- * @param {string} rawBody - raw request body string
- * @param {string} signature - x-razorpay-signature header
- * @param {object} payload - parsed JSON body
- */
-const handleWebhook = async (rawBody, signature, payload) => {
-  // Verify webhook signature
-  const expectedSignature = crypto
-    .createHmac("sha256", environment.razorpay.webhookSecret)
-    .update(rawBody)
-    .digest("hex");
-
-  if (expectedSignature !== signature) {
-    logger.warn("[WEBHOOK] Invalid webhook signature");
-    const error = new Error("Invalid webhook signature.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const event = payload.event;
-  logger.info(`[WEBHOOK] Received event: ${event}`);
-
-  // ── Handle payment.captured ──────────────
-  if (event === "payment.captured") {
-    const paymentEntity = payload.payload?.payment?.entity;
-    if (!paymentEntity) return { processed: false, reason: "No payment entity in payload" };
-
-    const orderId = paymentEntity.order_id;
-    const paymentId = paymentEntity.id;
-
-    const existingPayment = await prisma.payment.findUnique({
-      where: { razorpayOrderId: orderId },
     });
 
-    if (existingPayment && existingPayment.status !== "paid") {
-      await prisma.payment.update({
-        where: { razorpayOrderId: orderId },
+    // 3. Create Payment record in DB with status "paid"
+    const payment = await tx.payment.create({
+      data: {
+        userId,
+        razorpayOrderId: mockOrderId,
+        razorpayPaymentId: mockPaymentId,
+        amount: finalAmount,
+        amountPaise,
+        currency: "INR",
+        status: "paid",
+        method: "unknown",
+        description: description || null,
+        category: category || null,
+        receipt,
+        transactionId: transaction.id,
+      },
+    });
+
+    // 4. Handle SHG Auto-Sync if applicable
+    let shgTransaction = null;
+    if (shgGroupId && shgTransactionType) {
+      
+      shgTransaction = await tx.shgTransaction.create({
         data: {
-          razorpayPaymentId: paymentId,
-          status: "paid",
-          method: paymentEntity.method || "unknown",
-          razorpayPaymentData: paymentEntity,
-          updatedAt: new Date(),
+          groupId: shgGroupId,
+          createdById: userId,
+          type: shgTransactionType,
+          amount: finalAmount,
+          status: "approved", // Deposits/Repayments are instantly approved
+          description: description || `Mock ${shgTransactionType} from checkout`,
+          metadata: {
+            mockPaymentId,
+            ...(lateFeeApplied && { lateFeeApplied })
+          },
         },
       });
-      logger.info(`[WEBHOOK] Payment captured via webhook: ${orderId}`);
+
+      // Update SHG balance
+      await tx.shgGroup.update({
+        where: { id: shgGroupId },
+        data: { totalBalance: { increment: finalAmount } },
+      });
+
+      // Log audit
+      await tx.shgAuditLog.create({
+        data: {
+          groupId: shgGroupId,
+          actorId: userId,
+          actionType: "transaction_approved",
+          payload: {
+            transactionId: shgTransaction.id,
+            type: shgTransactionType,
+            amount: finalAmount,
+            source: "mock_checkout"
+          }
+        }
+      });
     }
-    return { processed: true, event };
-  }
 
-  // ── Handle payment.failed ────────────────
-  if (event === "payment.failed") {
-    const paymentEntity = payload.payload?.payment?.entity;
-    if (!paymentEntity) return { processed: false, reason: "No payment entity" };
-
-    const orderId = paymentEntity.order_id;
-
-    await prisma.payment.updateMany({
-      where: {
-        razorpayOrderId: orderId,
-        status: { not: "paid" }, // Don't downgrade already-paid orders
-      },
-      data: {
-        status: "failed",
-        updatedAt: new Date(),
-      },
-    });
-
-    logger.info(`[WEBHOOK] Payment failed via webhook: ${orderId}`);
-    return { processed: true, event };
-  }
-
-  // ── Handle order.paid ────────────────────
-  if (event === "order.paid") {
-    logger.info(`[WEBHOOK] Order paid event received`);
-    return { processed: true, event };
-  }
-
-  return { processed: false, reason: `Unhandled event: ${event}` };
+    return {
+      payment,
+      transaction,
+      lateFeeApplied,
+      shgTransaction
+    };
+  });
 };
 
 // ─────────────────────────────────────────
 // GET PAYMENT HISTORY
-// Returns all payments for a user
 // ─────────────────────────────────────────
 const getPaymentHistory = async (userId, filters = {}) => {
   const where = { userId };
@@ -343,24 +197,18 @@ const getPaymentById = async (userId, paymentId) => {
 
 // ─────────────────────────────────────────
 // GET PAYMENT ANALYTICS
-// Summary stats for the user's payments
 // ─────────────────────────────────────────
 const getPaymentAnalytics = async (userId) => {
   const [totalPaid, totalFailed, recentPayments, categoryBreakdown] =
     await Promise.all([
-      // Total successful payments amount
       prisma.payment.aggregate({
         where: { userId, status: "paid" },
         _sum: { amount: true },
         _count: { id: true },
       }),
-
-      // Failed payment count
       prisma.payment.count({
         where: { userId, status: "failed" },
       }),
-
-      // Last 5 payments
       prisma.payment.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
@@ -375,8 +223,6 @@ const getPaymentAnalytics = async (userId) => {
           createdAt: true,
         },
       }),
-
-      // Spending by category
       prisma.payment.groupBy({
         by: ["category"],
         where: { userId, status: "paid" },
@@ -385,7 +231,6 @@ const getPaymentAnalytics = async (userId) => {
       }),
     ]);
 
-  // Monthly breakdown for last 6 months
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
@@ -402,7 +247,6 @@ const getPaymentAnalytics = async (userId) => {
     orderBy: { createdAt: "asc" },
   });
 
-  // Group by month
   const monthlyMap = {};
   monthlyPayments.forEach((p) => {
     const key = `${p.createdAt.getFullYear()}-${String(
@@ -429,9 +273,7 @@ const getPaymentAnalytics = async (userId) => {
 };
 
 module.exports = {
-  createOrder,
-  verifyPayment,
-  handleWebhook,
+  processMockCheckout,
   getPaymentHistory,
   getPaymentById,
   getPaymentAnalytics,
