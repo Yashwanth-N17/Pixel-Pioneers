@@ -7,8 +7,10 @@ class IntentRecognitionService:
 
         if "order" in normalized:
             return IntentResult(name="create_order", confidence=0.88)
+
         if "help" in normalized or "assist" in normalized:
             return IntentResult(name="support_request", confidence=0.86)
+
         if "status" in normalized:
             return IntentResult(name="check_status", confidence=0.84)
 

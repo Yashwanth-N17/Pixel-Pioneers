@@ -6,13 +6,17 @@ from app.routes.budget_planning_routes import router as budget_planning_router
 from app.services.orchestrator import VoiceOrchestrator
 
 app = FastAPI(title=settings.APP_NAME)
+
 orchestrator = VoiceOrchestrator()
 app.include_router(budget_planning_router)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "service": settings.APP_NAME}
+    return {
+        "status": "ok",
+        "service": settings.APP_NAME,
+    }
 
 
 @app.post("/v1/voice/process", response_model=VoiceProcessResponse)
