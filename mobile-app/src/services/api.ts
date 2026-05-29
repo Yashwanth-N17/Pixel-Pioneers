@@ -15,8 +15,8 @@ const envVoiceUrl = process.env.EXPO_PUBLIC_VOICE_URL;
 //   (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0] ||
 //   null;
 
-const fallbackApi = 'http://10.60.229.1:3000/api';
-const fallbackVoice = 'http://10.60.229.1:8001/api';
+const fallbackApi = expoHost ? `http://${expoHost}:3000/api` : 'http://192.168.29.9:3000/api';
+const fallbackVoice = expoHost ? `http://${expoHost}:8001/api` : 'http://192.168.29.9:8001/api';
 
 // Temporarily hardcoding to fallbacks to bypass stale .env variables
 const BASE = fallbackApi;

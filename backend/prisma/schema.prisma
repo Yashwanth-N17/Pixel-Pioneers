@@ -76,6 +76,44 @@ enum PaymentMethod {
   unknown
 }
 
+enum ShgRole {
+  treasurer
+  president
+  member
+  admin
+}
+
+enum ShgTransactionType {
+  deposit
+  withdrawal
+  loan_repayment
+}
+
+enum ShgTransactionStatus {
+  pending
+  approved
+  rejected
+  executed
+}
+
+enum ShgApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum ShgProposalStatus {
+  open
+  passed
+  rejected
+  expired
+}
+
+enum ShgVoteValue {
+  yes
+  no
+}
+
 
 // ─────────────────────────────────────────
 // USER MODEL
@@ -118,6 +156,14 @@ model User {
 
   // NEW RELATION
   loanAnalyses    LoanAnalysis[]
+  shgGroupsCreated ShgGroup[]       @relation("ShgGroupCreatedBy")
+  shgMemberships  ShgMember[]
+  shgTransactionsCreated ShgTransaction[] @relation("ShgTransactionCreatedBy")
+  shgApprovals    ShgApproval[]
+  shgProposalsCreated ShgProposal[] @relation("ShgProposalCreatedBy")
+  shgVotes        ShgVote[]
+  shgAuditLogs    ShgAuditLog[]
+  shgNotifications ShgNotification[]
 
   @@map("users")
 }
@@ -383,4 +429,142 @@ model Payment {
   @@index([razorpayOrderId])
   @@index([status])
   @@map("payments")
+}
+
+model ShgGroup {
+  id           String           @id @default(uuid())
+  name         String
+  createdById  String
+  totalBalance Float            @default(0)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  createdBy     User              @relation("ShgGroupCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  members       ShgMember[]
+  transactions  ShgTransaction[]
+  proposals     ShgProposal[]
+  auditLogs     ShgAuditLog[]
+  notifications ShgNotification[]
+
+  @@index([createdById])
+  @@map("shg_groups")
+}
+
+model ShgMember {
+  id         String   @id @default(uuid())
+  groupId    String
+  userId     String
+  role       ShgRole  @default(member)
+  trustScore Float    @default(0)
+  joinedAt   DateTime @default(now())
+
+  group ShgGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("shg_members")
+}
+
+model ShgTransaction {
+  id          String               @id @default(uuid())
+  groupId     String
+  createdById String
+  type        ShgTransactionType
+  amount      Float
+  status      ShgTransactionStatus @default(pending)
+  description String?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  group     ShgGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy User          @relation("ShgTransactionCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  approvals ShgApproval[]
+
+  @@index([groupId, createdAt])
+  @@index([createdById])
+  @@index([status])
+  @@map("shg_transactions")
+}
+
+model ShgApproval {
+  id            String            @id @default(uuid())
+  transactionId String
+  approverId    String
+  status        ShgApprovalStatus @default(pending)
+  remarks       String?
+  createdAt     DateTime          @default(now())
+
+  transaction ShgTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  approver    User           @relation(fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@unique([transactionId, approverId])
+  @@index([approverId])
+  @@map("shg_approvals")
+}
+
+model ShgProposal {
+  id          String            @id @default(uuid())
+  groupId     String
+  createdById String
+  title       String
+  description String?
+  status      ShgProposalStatus @default(open)
+  deadline    DateTime?
+  createdAt   DateTime          @default(now())
+
+  group     ShgGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("ShgProposalCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  votes     ShgVote[]
+
+  @@index([groupId, createdAt])
+  @@index([createdById])
+  @@map("shg_proposals")
+}
+
+model ShgVote {
+  id         String       @id @default(uuid())
+  proposalId String
+  userId     String
+  vote       ShgVoteValue
+  createdAt  DateTime     @default(now())
+
+  proposal ShgProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, userId])
+  @@index([userId])
+  @@map("shg_votes")
+}
+
+model ShgAuditLog {
+  id         String   @id @default(uuid())
+  groupId    String
+  actorId    String
+  actionType String
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  group ShgGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actor User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+  @@index([actorId])
+  @@map("shg_audit_logs")
+}
+
+model ShgNotification {
+  id         String   @id @default(uuid())
+  groupId    String
+  userId     String
+  message    String
+  readStatus Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  group ShgGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, userId, readStatus])
+  @@map("shg_notifications")
 }

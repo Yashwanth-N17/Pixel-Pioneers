@@ -7,7 +7,8 @@ const prisma = require("../../config/db");
 const environment = require("../../config/environment");
 const logger = require("../../utils/logger");
 
-const AI_SERVICE_URL = environment.ai.serviceUrl;
+// Sanitize URL to prevent double slashes
+const AI_SERVICE_URL = environment.ai.serviceUrl.replace(/\/$/, "");
 
 // ─────────────────────────────────────────
 // HELPERS

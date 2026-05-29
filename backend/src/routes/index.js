@@ -14,6 +14,8 @@ const profileRoutes = require("../modules/profile/profile.routes");
 const chatRoutes = require("../modules/chat/chat.routes");
 const paymentsRoutes = require("../modules/payments/payments.routes"); // ← NEW
 
+const shgRoutes = require("../modules/shg/shg.routes");
+
 // Health check
 router.get("/health", (req, res) => {
   res.status(200).json({
@@ -34,5 +36,7 @@ router.use("/rtc", rtcRoutes);
 router.use("/profile", profileRoutes);
 router.use("/chat", chatRoutes);
 router.use("/payments", paymentsRoutes); // ← NEW
+
+router.use("/shg", shgRoutes);
 
 module.exports = router;

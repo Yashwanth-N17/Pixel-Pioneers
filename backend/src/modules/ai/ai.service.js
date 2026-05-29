@@ -6,7 +6,8 @@ const prisma = require("../../config/db");
 const environment = require("../../config/environment");
 const logger = require("../../utils/logger");
 
-const AI_BASE_URL = environment.ai.serviceUrl;
+// Sanitize URL to prevent double slashes in concatenated paths
+const AI_BASE_URL = environment.ai.serviceUrl.replace(/\/$/, "");
 
 // Axios instance for AI service
 const aiClient = axios.create({
@@ -14,6 +15,20 @@ const aiClient = axios.create({
   timeout: 30000,
   headers: { "Content-Type": "application/json" },
 });
+
+/**
+ * Connectivity test to verify the AI Service at http://10.60.205.32/ is reachable
+ */
+const checkAIHealth = async () => {
+  try {
+    logger.info(`[AI-HEALTH] Testing connection to: ${AI_BASE_URL}`);
+    const response = await aiClient.get("/");
+    return { status: "online", data: response.data };
+  } catch (err) {
+    logger.error(`[AI-HEALTH] Service unreachable at ${AI_BASE_URL}: ${err.message}`);
+    return { status: "offline", error: err.message };
+  }
+};
 
 /**
  * Send a financial guidance query to AI service
@@ -94,4 +109,4 @@ const buildAIServiceError = (err) => {
 
 // analyzeLoan removed — now handled by loanAnalysis.service.js
 
-module.exports = { getFinancialGuidance, detectScam };
+module.exports = { getFinancialGuidance, detectScam, checkAIHealth };
