@@ -1,0 +1,386 @@
+// ArthSaathi - Prisma Schema
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum TransactionType {
+  income
+  expense
+  saving
+}
+
+enum ReportType {
+  financial_guidance
+  scam_detection
+  loan_analysis
+  chat_response
+}
+
+enum OccupationType {
+  farmer
+  shop_owner
+  tailor
+  daily_wage_worker
+}
+
+enum LoanRiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+enum LoanPurpose {
+  WORKING_CAPITAL
+  AGRICULTURE
+  EQUIPMENT_PURCHASE
+  HOME_IMPROVEMENT
+  EDUCATION
+  MEDICAL
+  BUSINESS_EXPANSION
+  OTHER
+}
+
+enum RepaymentHabit {
+  always_on_time
+  sometimes_late
+  often_late
+  defaulted
+  no_loans_yet
+}
+enum PaymentStatus {
+  created      // Order created, payment not started
+  attempted    // User opened Razorpay checkout
+  paid         // Payment successful and verified
+  failed       // Payment failed
+  refunded     // Payment refunded
+}
+
+enum PaymentMethod {
+  upi
+  card
+  netbanking
+  wallet
+  emi
+  unknown
+}
+
+
+// ─────────────────────────────────────────
+// USER MODEL
+// ─────────────────────────────────────────
+
+model User {
+  id              String          @id @default(uuid())
+  name            String
+  phone           String          @unique
+  email           String?         @unique
+  password        String
+  language        String          @default("en")
+  village         String?
+  district        String?
+
+  // Occupation & Financial Profile
+  occupation      OccupationType?
+  monthlyIncome   Float?
+  monthlyExpenses Float?
+
+  // Loan History
+  loanHistory     Json?
+
+  // Repayment History
+  repaymentHabit  RepaymentHabit?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  transactions    Transaction[]
+  aiReports       AIReport[]
+  rtcRecords      RTCRecord[]
+  chatMessages    ChatMessage[]
+  payments        Payment[]
+  farmerProfile   FarmerProfile?
+  shopProfile     ShopProfile?
+  tailorProfile   TailorProfile?
+  genericProfile  GenericProfile?
+
+  // NEW RELATION
+  loanAnalyses    LoanAnalysis[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────
+// TRANSACTION MODEL
+// ─────────────────────────────────────────
+
+model Transaction {
+  id          String          @id @default(uuid())
+  userId      String
+  amount      Float
+  type        TransactionType
+  category    String
+  note        String?
+  date        DateTime        @default(now())
+  ledgerMeta  Json?           // profession-specific extra data for ledger entries
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+// ─────────────────────────────────────────
+// AI REPORT MODEL
+// ─────────────────────────────────────────
+
+model AIReport {
+  id           String     @id @default(uuid())
+  userId       String
+  reportType   ReportType
+  inputData    Json
+  aiResponse   Json
+  createdAt    DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_reports")
+}
+
+// ─────────────────────────────────────────
+// RTC RECORD MODEL
+// ─────────────────────────────────────────
+
+model RTCRecord {
+  id           String   @id @default(uuid())
+  userId       String
+  ownerName    String?
+  surveyNumber String?
+  landArea     String?
+  cropType     String?
+  village      String?
+  taluk        String?
+  district     String?
+  rawOCRData   Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("rtc_records")
+}
+
+// ─────────────────────────────────────────
+// CHAT MESSAGE MODEL
+// ─────────────────────────────────────────
+
+model ChatMessage {
+  id           String      @id @default(uuid())
+  userId       String
+  role         String      // "user" | "assistant"
+  content      String
+  language     String?
+  inputType    String      @default("text") // "text" | "voice"
+  intent       String?     // detected intent: expense_tracking | loan_query | scam_check | general
+  createdAt    DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
+}
+
+// ─────────────────────────────────────────
+// FARMER PROFILE MODEL
+// ─────────────────────────────────────────
+
+model FarmerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  crops           String[] // e.g. ["rice", "sugarcane"]
+  inputCost       Float?   // monthly input cost in INR
+  landArea        String?  // from RTC or self-reported
+  irrigationType  String?  // rain-fed | irrigated | mixed
+  rtcVerified     Boolean  @default(false)
+  rtcRecordId     String?  // optional link to RTCRecord
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("farmer_profiles")
+}
+
+// ─────────────────────────────────────────
+// SHOP PROFILE MODEL
+// ─────────────────────────────────────────
+
+model ShopProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  shopName          String?
+  investmentAmount  Float?   // total capital invested
+  supplierCredit    Float?   // credit available from suppliers in INR
+  inventoryCycle    Int?     // restocking cycle in days
+  monthlyRevenue    Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("shop_profiles")
+}
+
+// ─────────────────────────────────────────
+// TAILOR PROFILE MODEL
+// ─────────────────────────────────────────
+
+model TailorProfile {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  machineryCount        Int?
+  weeklyStitchCapacity  Int?     // garments per week
+  advanceDeposits       Float?   // typical advance received in INR
+  workType              String?  // blouse | full_suit | alterations | all
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("tailor_profiles")
+}
+
+// ─────────────────────────────────────────
+// GENERIC PROFILE MODEL (Daily Wage Worker)
+// ─────────────────────────────────────────
+
+model GenericProfile {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  employmentStability  String?  // stable | seasonal | irregular
+  workingDaysPerMonth  Int?
+  paymentChannel       String?  // cash | upi | bank_transfer
+  employer             String?
+  workType             String?  // construction | domestic | agriculture | other
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("generic_profiles")
+}
+
+
+model LoanAnalysis {
+  id                  String         @id @default(uuid())
+  userId              String
+  requestedLoanAmount Float
+  eligibleAmount      Float
+  arthScore           Int            // 0–1000
+  riskLevel           LoanRiskLevel
+  emi                 Float
+  tenureMonths        Int
+  interestRate        Float
+  totalPayable        Float
+  debtToIncomeRatio   Float
+  repaymentCapacity   Float          // disposable income after expenses
+  loanPurpose         LoanPurpose?
+  collateralValue     Float?
+
+  positiveFactors     Json           // string[]
+  negativeFactors     Json           // string[]
+  riskFactors         Json           // string[]
+  recommendations     Json           // string[]
+
+  rawAIResponse       Json           // full AI service response
+
+  createdAt           DateTime       @default(now())
+
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repaymentForecast   RepaymentForecastEntry[]
+  recommendedProducts RecommendedLoanProduct[]
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@map("loan_analyses")
+}
+
+model RepaymentForecastEntry {
+  id               String       @id @default(uuid())
+  loanAnalysisId   String
+  month            Int
+  predictedIncome  Float
+  emi              Float
+  remainingBalance Float
+
+  loanAnalysis     LoanAnalysis @relation(fields: [loanAnalysisId], references: [id], onDelete: Cascade)
+
+  @@index([loanAnalysisId])
+  @@map("repayment_forecast_entries")
+}
+
+model RecommendedLoanProduct {
+  id             String       @id @default(uuid())
+  loanAnalysisId String
+  provider       String
+  productName    String
+  interestRate   String
+  maxAmount      Float
+  reason         String
+
+  loanAnalysis   LoanAnalysis @relation(fields: [loanAnalysisId], references: [id], onDelete: Cascade)
+
+  @@index([loanAnalysisId])
+  @@map("recommended_loan_products")
+}
+
+model Payment {
+  id                  String        @id @default(uuid())
+  userId              String
+
+  // Razorpay identifiers
+  razorpayOrderId     String        @unique  // order_XXXXXXX from Razorpay
+  razorpayPaymentId   String?       @unique  // pay_XXXXXXX — set after payment
+  razorpaySignature   String?                // HMAC signature — set after verification
+
+  // Payment details
+  amount              Float                  // amount in INR
+  amountPaise         Int                    // amount in paise (Razorpay works in paise)
+  currency            String        @default("INR")
+  status              PaymentStatus @default(created)
+  method              PaymentMethod @default(unknown)
+
+  // Metadata
+  description         String?                // "Groceries", "Rent", etc.
+  category            String?                // links to transaction category
+  receipt             String?                // unique receipt id we generate
+
+  // Razorpay full response (stored for audit)
+  razorpayOrderData   Json?
+  razorpayPaymentData Json?
+
+  // Linked transaction (created after successful payment)
+  transactionId       String?
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([razorpayOrderId])
+  @@index([status])
+  @@map("payments")
+}
