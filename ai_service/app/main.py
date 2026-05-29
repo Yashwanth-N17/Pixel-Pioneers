@@ -3,12 +3,14 @@ from fastapi import FastAPI, File, Form, UploadFile
 from app.core.config import settings
 from app.models.schemas import VoiceProcessResponse
 from app.routes.budget_planning_routes import router as budget_planning_router
+from app.routes.chat_routes import router as chat_router
 from app.services.orchestrator import VoiceOrchestrator
 
 app = FastAPI(title=settings.APP_NAME)
 
 orchestrator = VoiceOrchestrator()
 app.include_router(budget_planning_router)
+app.include_router(chat_router)
 
 
 @app.get("/health")

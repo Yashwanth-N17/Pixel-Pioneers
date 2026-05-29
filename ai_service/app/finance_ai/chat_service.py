@@ -1,281 +1,147 @@
-
-# ai_service/app/finance_ai/chat_service.py
-# Core GPT-based financial chat logic for ArthSaathi
-
 import json
 import logging
-from openai import AsyncOpenAI
-from app.config import settings
+import re
+from typing import Any
 
-import json
-import logging
-
-from groq import AsyncGroq
+try:
+    from groq import AsyncGroq
+except ImportError:  # pragma: no cover - allows local boot without optional AI SDK
+    AsyncGroq = None
 
 from app.core.config import settings
-
 from app.finance_ai.intent_classifier import classify_intent
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+DEFAULT_MODEL = "llama-3.1-8b-instant"
 
-# ─────────────────────────────────────────
-# SYSTEM PROMPT BUILDER
-# ─────────────────────────────────────────
 
-def build_system_prompt(user_context: dict, language: str) -> str:
-    """
-    Builds a language-aware, occupation-aware system prompt.
-    """
-
+def build_system_prompt(user_context: dict[str, Any], language: str) -> str:
     language_instruction = {
         "en": "Respond only in English.",
-        "hi": "हमेशा हिंदी में जवाब दें। (Always respond in Hindi.)",
-        "kn": "ಯಾವಾಗಲೂ ಕನ್ನಡದಲ್ಲಿ ಉತ್ತರ ಕೊಡಿ. (Always respond in Kannada.)",
+        "hi": "Respond only in Hindi.",
+        "kn": "Respond only in Kannada.",
+        "te": "Respond only in Telugu.",
+        "ta": "Respond only in Tamil.",
+        "mr": "Respond only in Marathi.",
     }.get(language, "Respond only in English.")
 
-
-# Uses Groq (free tier) — llama-3.3-70b-versatile is free and very capable
-client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-MODEL = "llama-3.3-70b-versatile"
-
-
-def build_system_prompt(user_context: dict, language: str) -> str:
-    language_instruction = {
-        "en": "Respond only in English.",
-        "hi": "हमेशा हिंदी में जवाब दें।",
-        "kn": "ಯಾವಾಗಲೂ ಕನ್ನಡದಲ್ಲಿ ಉತ್ತರ ಕೊಡಿ.",
-        "te": "ఎల్లప్పుడూ తెలుగులో సమాధానం ఇవ్వండి.",
-        "ta": "எப்போதும் தமிழில் பதில் சொல்லுங்கள்.",
-        "mr": "नेहमी मराठीत उत्तर द्या.",
-    }.get(language, "Respond only in English.")
-
-    name = user_context.get("name", "the user")
-
-    occupation = user_context.get("occupation", "unknown")
-    monthly_income = user_context.get("monthly_income", "unknown")
-    monthly_expenses = user_context.get("monthly_expenses", "unknown")
-    repayment_habit = user_context.get("repayment_habit", "unknown")
-
-    name = user_context.get("name", "the user")
-
-    return f"""You are ArthSaathi — a trusted, warm, and knowledgeable AI financial assistant 
-designed specifically for rural and underserved communities in India.
-
-
-    return f"""You are ArthSaathi — a trusted, warm AI financial assistant for rural and underserved communities in India.
-
-
+    return f"""You are ArthSaathi, a warm rural financial assistant for India.
 {language_instruction}
 
-USER PROFILE:
-- Name: {name}
-- Occupation: {occupation}
-- Monthly Income: ₹{monthly_income}
-- Monthly Expenses: ₹{monthly_expenses}
-- Loan Repayment Habit: {repayment_habit}
+User profile:
+- Name: {user_context.get("name", "the user")}
+- Occupation: {user_context.get("occupation", "unknown")}
+- Monthly income: Rs {user_context.get("monthly_income", "unknown")}
+- Monthly expenses: Rs {user_context.get("monthly_expenses", "unknown")}
+- Repayment habit: {user_context.get("repayment_habit", "unknown")}
 
-YOUR RESPONSIBILITIES:
-1. EXPENSE TRACKING — Extract and confirm expenses or income mentioned by the user.
-2. LOAN GUIDANCE — Assess loan viability based on income/expense ratio. Warn against predatory lenders.
-3. SCAM DETECTION — Identify OTP scams, fake bank calls, phishing. Be alert and protective.
-4. FINANCIAL GUIDANCE — Give practical, simple budgeting and savings advice tailored to their occupation.
-5. GENERAL SUPPORT — Answer financial questions in simple, clear language.
-
-RESPONSE RULES:
-- Use SIMPLE language. Avoid jargon.
-- Be empathetic and encouraging — never condescending.
-
-- If the user is recording an expense or income, confirm it clearly and ask if they want to save it.
-- If you detect a scam, warn them CLEARLY and tell them never to share OTPs or passwords.
-- Keep responses SHORT (2-4 sentences max) unless detailed guidance is requested.
-- Always respond in the user's preferred language as instructed above.
-
-IMPORTANT: Never give advice about specific stocks or trading. Focus only on personal finance, budgeting, loans, scam protection, and savings."""
+Give simple, practical advice about budgeting, expenses, loans, savings, and scam safety.
+Keep the reply short, clear, and respectful. Never recommend specific stocks or trading."""
 
 
-# ─────────────────────────────────────────
-# EXPENSE EXTRACTION
-# ─────────────────────────────────────────
-
-async def extract_expenses_from_text(text: str, language: str) -> list:
-    """
-    Uses GPT to extract structured expense/income entries from natural language.
-    Returns a list of detected transactions (may be empty).
-    """
-    extraction_prompt = f"""Extract any expense or income mentions from the following text.
-Return ONLY a JSON array. Each item must have:
-- type: "expense" | "income"
-- amount: number (in INR)
-- category: string (e.g. "Groceries", "Fuel", "Salary", "Farming")
-- note: string (brief description)
-
-If nothing is found, return an empty array [].
-
-- Keep responses SHORT (2-4 sentences max) unless detailed guidance is requested.
-- Never give advice about specific stocks or trading."""
+def build_suggestions(intent: str) -> list[str]:
+    suggestion_map = {
+        "expense_tracking": ["Save this expense", "View expenses", "Check this month's spending"],
+        "loan_query": ["Check loan capacity", "Explain EMI", "Safe borrowing tips"],
+        "scam_check": ["Report scam", "OTP safety", "Block suspicious number"],
+        "balance_inquiry": ["Show summary", "Savings plan", "Expense breakdown"],
+        "financial_guidance": ["Create budget", "Reduce expenses", "Emergency fund"],
+        "rtc_query": ["Explain RTC", "Land record help", "Survey number help"],
+        "general": ["Track expenses", "Loan safety", "Avoid scams"],
+    }
+    return suggestion_map.get(intent, suggestion_map["general"])
 
 
-async def extract_expenses_from_text(text: str) -> list:
-    prompt = f"""Extract any expense or income mentions from the following text.
-Return ONLY a JSON array. Each item must have:
-- type: "expense" | "income"
-- amount: number (in INR)
-- category: string (e.g. "Groceries", "Fuel", "Salary")
-- note: string (brief description)
+def _fallback_reply(intent: str, language: str) -> str:
+    replies = {
+        "expense_tracking": "I found a money entry. Please review it before saving.",
+        "loan_query": "Check that EMI stays affordable after monthly expenses and avoid unsafe lenders.",
+        "scam_check": "Be careful. Never share OTP, PIN, password, or bank details with anyone.",
+        "balance_inquiry": "Compare income, expenses, and savings to know what is left this month.",
+        "financial_guidance": "Start with a simple budget: needs first, then savings, then flexible spending.",
+        "rtc_query": "RTC details should match the owner name, survey number, land area, and crop details.",
+        "general": "I can help with budgeting, expenses, loans, savings, and scam safety.",
+    }
+    return replies.get(intent, replies["general"])
 
-If nothing found, return [].
 
-Text: "{text}"
-JSON:"""
+def _extract_transactions_rule_based(text: str) -> list[dict[str, Any]]:
+    transactions = []
+    for match in re.finditer(r"(?:rs\.?|inr|rupees)?\s*(\d+(?:\.\d+)?)", text.lower()):
+        amount = float(match.group(1))
+        window = text[max(0, match.start() - 35): match.end() + 35].lower()
+        tx_type = "income" if any(word in window for word in ["earned", "received", "income", "salary", "mila", "kamaya"]) else "expense"
+        category = "General"
+        if any(word in window for word in ["food", "grocery", "rice", "vegetable"]):
+            category = "Food"
+        elif any(word in window for word in ["fuel", "bus", "transport"]):
+            category = "Transport"
+        elif any(word in window for word in ["seed", "fertilizer", "farm"]):
+            category = "Farming"
+        transactions.append({"type": tx_type, "amount": amount, "category": category, "note": window.strip()})
+    return transactions
+
+
+async def extract_expenses_from_text(text: str) -> list[dict[str, Any]]:
+    if not settings.GROQ_API_KEY or AsyncGroq is None:
+        return _extract_transactions_rule_based(text)
+
+    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+    prompt = f"""Extract expense or income entries from this text.
+Return only JSON shaped like {{"transactions":[{{"type":"expense","amount":120,"category":"Food","note":"rice"}}]}}.
+If nothing is found, return {{"transactions":[]}}.
+
+Text: {text}"""
 
     try:
         response = await client.chat.completions.create(
-
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": extraction_prompt}],
-
-            model=MODEL,
+            model=settings.GROQ_CHAT_MODEL or DEFAULT_MODEL,
             messages=[{"role": "user", "content": prompt}],
-
             max_tokens=300,
             temperature=0,
+            response_format={"type": "json_object"},
         )
-        raw = response.choices[0].message.content.strip()
+        raw = response.choices[0].message.content or "{}"
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict):
+            return parsed.get("transactions") or parsed.get("items") or []
+    except Exception as exc:
+        logger.warning("[CHAT] Transaction extraction failed: %s", exc)
+    return _extract_transactions_rule_based(text)
 
-        # Strip markdown code fences if present
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        return json.loads(raw)
-    except Exception as e:
-        logger.warning(f"[CHAT] Expense extraction failed: {str(e)}")
-        return []
 
-
-# ─────────────────────────────────────────
-# MAIN CHAT HANDLER
-# ─────────────────────────────────────────
-
-async def process_chat_message(
-    message: str,
-    language: str,
-    user_context: dict,
-) -> dict:
-    """
-    Main function: classifies intent, calls GPT, extracts expenses.
-    Returns structured response dict.
-    """
-    # Step 1 — Classify intent
+async def process_chat_message(message: str, language: str, user_context: dict[str, Any]) -> dict[str, Any]:
     intent = classify_intent(message, language)
-    logger.info(f"[CHAT] Intent: {intent} | Language: {language}")
+    logger.info("[CHAT] intent=%s language=%s", intent, language)
 
-    # Step 2 — Build system prompt
-    system_prompt = build_system_prompt(user_context, language)
-
-    # Step 3 — Compose messages
-
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        return json.loads(raw)
-    except Exception as e:
-        logger.warning(f"[CHAT] Expense extraction failed: {e}")
-        return []
-
-
-async def process_chat_message(message: str, language: str, user_context: dict) -> dict:
-    intent = classify_intent(message, language)
-    logger.info(f"[CHAT] Intent: {intent} | Language: {language}")
-
-    system_prompt = build_system_prompt(user_context, language)
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": message},
-    ]
-
-    # Step 4 — Call GPT
-    try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-
-    try:
-        response = await client.chat.completions.create(
-            model=MODEL,
-
-            messages=messages,
-            max_tokens=400,
-            temperature=0.5,
-        )
-        ai_reply = response.choices[0].message.content.strip()
-    except Exception as e:
-
-        logger.error(f"[CHAT] GPT call failed: {str(e)}")
-        raise RuntimeError(f"GPT processing failed: {str(e)}")
-
-    # Step 5 — Extract expenses if intent matches
-    detected_expenses = []
-    if intent == "expense_tracking":
-        detected_expenses = await extract_expenses_from_text(message, language)
-
-    # Step 6 — Build suggestions
-    suggestions = build_suggestions(intent)
-
-        logger.error(f"[CHAT] Groq call failed: {e}")
-        raise RuntimeError(f"AI processing failed: {e}")
+    ai_reply = _fallback_reply(intent, language)
+    if settings.GROQ_API_KEY and AsyncGroq is not None:
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        try:
+            response = await client.chat.completions.create(
+                model=settings.GROQ_CHAT_MODEL or DEFAULT_MODEL,
+                messages=[
+                    {"role": "system", "content": build_system_prompt(user_context, language)},
+                    {"role": "user", "content": message},
+                ],
+                max_tokens=400,
+                temperature=0.4,
+            )
+            ai_reply = (response.choices[0].message.content or ai_reply).strip()
+        except Exception as exc:
+            logger.warning("[CHAT] Groq chat failed, using fallback: %s", exc)
 
     detected_expenses = []
     if intent == "expense_tracking":
         detected_expenses = await extract_expenses_from_text(message)
-
 
     return {
         "response": ai_reply,
         "intent": intent,
         "language": language,
         "detected_expenses": detected_expenses,
-
-        "suggestions": suggestions,
-
         "suggestions": build_suggestions(intent),
-
     }
-
-
-def build_suggestions(intent: str) -> list:
-
-    """
-    Return contextual next-action suggestions based on detected intent.
-    These are sent to the frontend as quick-reply chips.
-    """
-=
-    suggestion_map = {
-        "expense_tracking": [
-            "Save this expense",
-            "View my expenses this month",
-            "How much have I spent today?",
-        ],
-        "loan_query": [
-            "Check my loan repayment capacity",
-            "What is a safe loan amount for me?",
-            "Explain interest rates simply",
-        ],
-        "scam_check": [
-            "How do I report this scam?",
-            "What should I never share on phone?",
-            "Block this number",
-        ],
-        "balance_inquiry": [
-            "Show my expense summary",
-            "How much can I save this month?",
-        ],
-        "financial_guidance": [
-            "Give me a savings plan",
-            "How do I reduce expenses?",
-            "Best way to save for emergencies",
-        ],
-        "general": [
-            "Help me track expenses",
-            "Explain loan safety",
-            "How do I avoid scams?",
-        ],
-    }
-    return suggestion_map.get(intent, suggestion_map["general"])

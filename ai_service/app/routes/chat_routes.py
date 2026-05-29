@@ -1,86 +1,44 @@
-
-# ai_service/app/routes/chat_routes.py
-# FastAPI routes for text and voice chat
-
-import logging
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
-from typing import Optional
-
 import json
 import logging
-from typing import Optional
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
-
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from app.finance_ai.chat_service import process_chat_message
+from app.services.tts_service import TextToSpeechService
 from app.speech.whisper_service import transcribe_audio
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/chat", tags=["Chat"])
-
-
-
-# ─────────────────────────────────────────
-# SCHEMAS
-# ─────────────────────────────────────────
+router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 class TextChatRequest(BaseModel):
-    message: str
-    language: Optional[str] = "en"
-    user_context: Optional[dict] = {}
+    message: str = Field(min_length=1)
+    language: str = "en"
+    user_context: dict[str, Any] = Field(default_factory=dict)
 
 
-
-# ─────────────────────────────────────────
-# TEXT CHAT
-# ─────────────────────────────────────────
-
-@router.post("/message")
-async def chat_message(request: TextChatRequest):
-    """
-    Accepts a text message, classifies intent, calls GPT,
-    and returns structured financial response.
-    """
-    if not request.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+class TextToSpeechRequest(BaseModel):
+    text: str = Field(min_length=1)
+    language: str = "en"
 
 
 @router.post("/message")
-async def chat_message(request: TextChatRequest):
-    if not request.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
-
+async def chat_message(request: TextChatRequest) -> dict[str, Any]:
     try:
-        result = await process_chat_message(
-            message=request.message,
+        return await process_chat_message(
+            message=request.message.strip(),
             language=request.language or "en",
             user_context=request.user_context or {},
         )
-        return result
-    except RuntimeError as e:
-
-        logger.error(f"[CHAT ROUTE] Error: {str(e)}")
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.error(f"[CHAT ROUTE] Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal error in chat processing.")
-
-
-# ─────────────────────────────────────────
-# VOICE CHAT
-# ─────────────────────────────────────────
-
-
-        logger.error(f"[CHAT] Error: {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.error(f"[CHAT] Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Internal error in chat processing.")
+    except RuntimeError as exc:
+        logger.error("[CHAT] text processing failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("[CHAT] unexpected text processing error")
+        raise HTTPException(status_code=500, detail="Internal error in chat processing.") from exc
 
 
 @router.post("/voice")
@@ -88,94 +46,60 @@ async def chat_voice(
     audio: UploadFile = File(...),
     language: str = Form(default="en"),
     user_context: str = Form(default="{}"),
-):
-
-    """
-    Accepts audio file, transcribes via Whisper,
-    then passes transcribed text through GPT financial analysis.
-    """
-    import json
-
-    # Validate file
-
-    if not audio:
+) -> dict[str, Any]:
+    audio_bytes = await audio.read()
+    if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio file is required.")
-
-    if audio.size and audio.size > 25 * 1024 * 1024:
-
-        raise HTTPException(
-            status_code=413,
-            detail="Audio file too large. Maximum size is 25MB."
-        )
-
-    # Parse user context
-
+    if len(audio_bytes) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio file too large. Maximum size is 25MB.")
 
-
     try:
-        context_dict = json.loads(user_context)
-    except Exception:
+        context_dict = json.loads(user_context) if user_context else {}
+    except json.JSONDecodeError:
         context_dict = {}
-
-
-    # Read audio bytes
-    try:
-        audio_bytes = await audio.read()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read audio file: {str(e)}")
-
-    # Step 1 — Transcribe
-
-    try:
-        audio_bytes = await audio.read()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read audio file: {e}")
-
 
     try:
         transcription = await transcribe_audio(
             audio_bytes=audio_bytes,
             mimetype=audio.content_type or "audio/webm",
-            language=language,
+            language=language or "en",
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except RuntimeError as exc:
+        logger.error("[CHAT] voice transcription failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    transcribed_text = transcription.get("text", "")
-
-
-    if not transcribed_text.strip():
-        raise HTTPException(
-            status_code=422,
-            detail="Could not transcribe audio. Please speak clearly and try again."
-        )
-
-    # Step 2 — Process through GPT
-
-    if not transcribed_text.strip():
-        raise HTTPException(
-            status_code=422,
-            detail="Could not transcribe audio. Please speak clearly and try again.",
-        )
-
+    transcribed_text = (transcription.get("text") or "").strip()
+    if not transcribed_text:
+        raise HTTPException(status_code=422, detail="Could not transcribe audio. Please speak clearly and try again.")
 
     try:
         result = await process_chat_message(
             message=transcribed_text,
-            language=language,
+            language=language or "en",
             user_context=context_dict,
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-
-    # Merge transcription into result
-    result["transcribed_text"] = transcribed_text
-    result["audio_duration"] = transcription.get("duration")
-
+    except RuntimeError as exc:
+        logger.error("[CHAT] voice chat processing failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     result["transcribed_text"] = transcribed_text
     result["audio_duration"] = transcription.get("duration")
-
     return result
+
+
+@router.post("/tts")
+async def chat_tts(request: TextToSpeechRequest) -> dict[str, str]:
+    try:
+        tts = TextToSpeechService()
+        result = await tts.synthesize(request.text)
+        if not result.audio_base64:
+            raise HTTPException(status_code=503, detail="Text-to-speech is not available.")
+        return {
+            "audio_base64": result.audio_base64,
+            "audio_mime_type": result.audio_mime_type,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("[CHAT] TTS failed")
+        raise HTTPException(status_code=503, detail="Text-to-speech failed.") from exc
