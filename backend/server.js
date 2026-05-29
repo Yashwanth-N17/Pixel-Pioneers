@@ -7,6 +7,7 @@ const environment = require("./src/config/environment");
 const prisma = require("./src/config/db");
 const logger = require("./src/utils/logger");
 const { attachVoiceSocket } = require("./src/websocket/voiceSocket");
+const { attachSocketIo } = require("./src/websocket/socketIo");
 
 const PORT = environment.port;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -25,6 +26,7 @@ const startServer = async () => {
       logger.info(`🤖 AI Service URL: ${environment.ai.serviceUrl}`);
     });
     attachVoiceSocket(server);
+    attachSocketIo(server);
 
     // Graceful shutdown
     const shutdown = async (signal) => {

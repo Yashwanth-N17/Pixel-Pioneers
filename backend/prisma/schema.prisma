@@ -114,6 +114,35 @@ enum ShgVoteValue {
   no
 }
 
+enum BudgetFrequency {
+  daily
+  weekly
+  monthly
+  seasonal
+}
+
+enum BudgetExpenseCategory {
+  food
+  farming
+  healthcare
+  education
+  loan_repayment
+  transport
+  utilities
+  miscellaneous
+}
+
+enum BudgetSeasonCategory {
+  kharif
+  rabi
+  zaid
+  festival
+  off_season
+  monsoon
+  harvest
+  other
+}
+
 
 // ─────────────────────────────────────────
 // USER MODEL
@@ -133,6 +162,7 @@ model User {
   occupation      OccupationType?
   monthlyIncome   Float?
   monthlyExpenses Float?
+  incomeLevel     String?
 
   // Loan History
   loanHistory     Json?
@@ -164,6 +194,13 @@ model User {
   shgVotes        ShgVote[]
   shgAuditLogs    ShgAuditLog[]
   shgNotifications ShgNotification[]
+  budgets         Budget[]
+  incomeSources   IncomeSource[]
+  emergencyFunds  EmergencyFund[]
+  educationPlans  EducationPlan[]
+  goldSavingsPlans GoldSavingsPlan[]
+  cashFlowForecasts CashFlowForecast[]
+  seasonalIncomeInsights SeasonalIncomeInsight[]
 
   @@map("users")
 }
@@ -567,4 +604,135 @@ model ShgNotification {
 
   @@index([groupId, userId, readStatus])
   @@map("shg_notifications")
+}
+
+model Budget {
+  id                 String   @id @default(uuid())
+  userId             String
+  totalIncome        Float
+  totalExpenses      Float
+  recommendedSavings Float    @default(0)
+  goals              Json?
+  seasonalFlags      Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@index([userId, createdAt])
+  @@map("budgets")
+}
+
+model IncomeSource {
+  id             String                @id @default(uuid())
+  userId         String
+  sourceName     String
+  amount         Float
+  frequency      BudgetFrequency
+  seasonalFlag   Boolean               @default(false)
+  seasonCategory BudgetSeasonCategory?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([frequency])
+  @@map("income_sources")
+}
+
+model Expense {
+  id          String                @id @default(uuid())
+  budgetId    String
+  category    BudgetExpenseCategory
+  amount      Float
+  description String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId, createdAt])
+  @@index([category])
+  @@map("budget_expenses")
+}
+
+model EmergencyFund {
+  id            String   @id @default(uuid())
+  userId        String
+  targetAmount  Float
+  currentSaved  Float    @default(0)
+  monthlyTarget Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("emergency_funds")
+}
+
+model EducationPlan {
+  id                   String   @id @default(uuid())
+  userId               String
+  childAge             Int
+  targetAmount         Float
+  targetYear           Int
+  estimatedFutureCost  Float
+  monthlySavingsNeeded Float
+  strategy             Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("education_plans")
+}
+
+model GoldSavingsPlan {
+  id             String   @id @default(uuid())
+  userId         String
+  savingsAmount  Float
+  goldEquivalent Float
+  estimatedGrowth Float
+  recommendations Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("gold_savings_plans")
+}
+
+model CashFlowForecast {
+  id               String   @id @default(uuid())
+  userId           String
+  predictedBalance Float
+  bestCase         Float
+  worstCase        Float
+  warnings         Json?
+  generatedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, generatedAt])
+  @@map("cash_flow_forecasts")
+}
+
+model SeasonalIncomeInsight {
+  id              String   @id @default(uuid())
+  userId          String
+  highIncomeMonths Json
+  lowIncomeMonths  Json
+  riskPeriods      Json
+  recommendations  Json?
+  generatedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, generatedAt])
+  @@map("seasonal_income_insights")
 }

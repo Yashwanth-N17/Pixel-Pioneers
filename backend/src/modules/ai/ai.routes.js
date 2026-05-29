@@ -8,6 +8,12 @@ const {
   financialGuidanceValidation,
   scamDetectionValidation,
   loanAnalysisValidation,
+  budgetPlanValidation,
+  emergencyFundValidation,
+  educationPlanValidation,
+  goldPlanValidation,
+  cashflowForecastValidation,
+  seasonalIncomeValidation,
 } = require("./ai.validation");
 const validate = require("../../middlewares/validate.middleware");
 const authMiddleware = require("../../middlewares/auth.middleware");
@@ -49,6 +55,24 @@ router.post(
   loanAnalysisValidation,
   validate,
   aiController.loanAnalysis
+);
+
+router.post("/budget-plan", budgetPlanValidation, validate, aiController.budgetPlan);
+router.post("/emergency-fund", emergencyFundValidation, validate, aiController.emergencyFund);
+router.post("/education-plan", educationPlanValidation, validate, aiController.educationPlan);
+router.get("/gold-price", aiController.getGoldPrice);
+router.post("/gold-plan", goldPlanValidation, validate, aiController.goldPlan);
+router.post(
+  "/cashflow-forecast",
+  cashflowForecastValidation,
+  validate,
+  aiController.cashflowForecast
+);
+router.post(
+  "/seasonal-income",
+  seasonalIncomeValidation,
+  validate,
+  aiController.seasonalIncome
 );
 
 module.exports = router;
