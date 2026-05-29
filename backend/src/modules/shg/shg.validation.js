@@ -29,6 +29,13 @@ const createGroupValidation = [
     .withMessage("Group name must be 120 characters or fewer."),
 ];
 
+const joinGroupValidation = [
+  body("inviteCode")
+    .trim()
+    .notEmpty()
+    .withMessage("Invite code or group ID is required.")
+];
+
 const addMemberValidation = [
   ...groupIdParam,
   body("userId").isUUID().withMessage("userId must be a valid UUID."),
@@ -103,6 +110,7 @@ module.exports = {
   proposalIdParam,
   notificationIdParam,
   createGroupValidation,
+  joinGroupValidation,
   addMemberValidation,
   createTransactionValidation,
   approvalActionValidation,

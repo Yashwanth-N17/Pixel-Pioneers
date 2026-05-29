@@ -67,11 +67,15 @@ const getApprovalUserIds = async (client, groupId, creatorId) => {
 };
 
 const createGroup = async (userId, payload) => {
+  // Generate a random 6-character alphanumeric invite code
+  const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
   return prisma.$transaction(async (tx) => {
     const group = await tx.shgGroup.create({
       data: {
         name: payload.name,
         createdById: userId,
+        inviteCode,
         members: {
           create: {
             userId,
@@ -182,6 +186,54 @@ const addMember = async (actorId, groupId, payload) => {
     await notifyUsers(tx, groupId, [payload.userId], "You have been added to an SHG group.");
 
     return member;
+  });
+};
+
+const joinGroup = async (userId, inviteCode) => {
+  return prisma.$transaction(async (tx) => {
+    // inviteCode can be either the 6-character code or the group ID UUID
+    const group = await tx.shgGroup.findFirst({
+      where: {
+        OR: [
+          { inviteCode },
+          { id: inviteCode }
+        ]
+      }
+    });
+
+    if (!group) throw makeError("Invalid invite code or group not found.", 404);
+
+    const existingMember = await tx.shgMember.findUnique({
+      where: { groupId_userId: { groupId: group.id, userId } }
+    });
+
+    if (existingMember) {
+      throw makeError("You are already a member of this SHG group.", 409);
+    }
+
+    const member = await tx.shgMember.create({
+      data: {
+        groupId: group.id,
+        userId,
+        role: "member",
+        trustScore: 75, // Default score for joining members
+      },
+      include: { user: { select: { id: true, name: true, phone: true } } },
+    });
+
+    await logAudit(tx, group.id, userId, "member_joined", {
+      memberId: member.id,
+      userId: member.userId,
+      inviteCode,
+    });
+    
+    // Notify admins
+    const adminIds = await getApprovalUserIds(tx, group.id, userId);
+    await notifyUsers(tx, group.id, adminIds, `A new member joined the SHG group.`);
+
+    // Return the dashboard format so the frontend can immediately show it
+    const dashboard = await getDashboard(userId, group.id);
+    return dashboard;
   });
 };
 
@@ -542,6 +594,7 @@ const getAuditLogs = async (userId, groupId) => {
 module.exports = {
   createGroup,
   getMyGroups,
+  joinGroup,
   getDashboard,
   getMembers,
   addMember,

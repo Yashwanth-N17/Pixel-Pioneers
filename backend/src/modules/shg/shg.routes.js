@@ -8,6 +8,7 @@ const {
   groupIdParam,
   notificationIdParam,
   createGroupValidation,
+  joinGroupValidation,
   addMemberValidation,
   createTransactionValidation,
   approvalActionValidation,
@@ -18,6 +19,7 @@ const {
 router.use(authMiddleware);
 
 router.post("/groups", createGroupValidation, validate, shgController.createGroup);
+router.post("/groups/join", joinGroupValidation, validate, shgController.joinGroup);
 router.get("/groups/my", shgController.getMyGroups);
 router.get("/groups/:groupId/dashboard", groupIdParam, validate, shgController.getDashboard);
 router.get("/groups/:groupId/members", groupIdParam, validate, shgController.getMembers);
