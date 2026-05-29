@@ -10,17 +10,16 @@ import { getToken } from './auth';
 const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
 const envVoiceUrl = process.env.EXPO_PUBLIC_VOICE_URL;
 
-// const expoHost =
-//   Constants.expoConfig?.hostUri?.split(':')[0] ||
-//   (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0] ||
-//   null;
+const expoHost =
+  Constants.expoConfig?.hostUri?.split(':')[0] ||
+  (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0] ||
+  null;
 
-const fallbackApi = 'http://10.60.229.1:3000/api';
-const fallbackVoice = 'http://10.60.229.1:8000/api';
+const fallbackApi = expoHost ? `http://${expoHost}:3000/api` : 'http://10.60.220.113:3000/api';
+const fallbackVoice = expoHost ? `http://${expoHost}:8000/api` : 'http://10.60.220.113:8000/api';
 
-// Temporarily hardcoding to fallbacks to bypass stale .env variables
-const BASE = fallbackApi;
-const VOICE = fallbackVoice;
+const BASE = envApiUrl ?? fallbackApi;
+const VOICE = envVoiceUrl ?? fallbackVoice;
 
 console.log('[API][BOOT] Resolved API baseURL:', BASE);
 console.log('[API][BOOT] Resolved Voice baseURL:', VOICE);
@@ -278,6 +277,22 @@ export const endpoints = {
     collateralValue?: number | null;
   }) => api.post('/ai/loan-analysis', body),
 
+  // ── Chat / Voice Assistant ──────────────
+  sendChatMessage: (body: {
+    message: string;
+    language?: 'en' | 'hi' | 'kn' | 'te' | 'ta' | 'mr';
+    context?: Record<string, any>;
+  }) => api.post('/chat/message', body),
+
+  sendVoiceMessage: (form: FormData) =>
+    api.post('/chat/voice', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+
+  getChatHistory: (limit = 50) =>
+    api.get('/chat/history', { params: { limit } }),
+
   // ── RTC ─────────────────────────────────
   uploadRtc: (form: FormData) =>
     api.post('/rtc/upload', form, {
@@ -333,7 +348,7 @@ export function getWebSocketBaseUrl(httpUrl: string): string {
 }
 
 export function createVoiceSocket({
-  backendUrl = getWebSocketBaseUrl(VOICE),
+  backendUrl = getWebSocketBaseUrl(BASE),
   onConnected,
   onReady,
   onChunkReceived,
