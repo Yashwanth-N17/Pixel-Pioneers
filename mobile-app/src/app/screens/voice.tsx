@@ -50,6 +50,7 @@ export default function VoiceScreen() {
   const router = useRouter();
   const occupation = useStore((state) => state.occupation);
   const language = useStore((state) => state.language);
+  const fetchDashboardData = useStore((state) => state.fetchDashboardData);
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -131,6 +132,10 @@ export default function VoiceScreen() {
         { role: 'ai', text: replyText },
       ]);
       speakReply(replyText);
+
+      if (response.data?.data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
+        void fetchDashboardData();
+      }
     } catch (error) {
       console.warn('Chat message failed', error);
       const errorMessage = getRequestErrorMessage(error, 'Error connecting to chat service.');
@@ -174,6 +179,10 @@ export default function VoiceScreen() {
         { role: 'ai' as const, text: replyText },
       ]);
       speakReply(replyText);
+
+      if (data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
+        void fetchDashboardData();
+      }
     } catch (error) {
       console.warn('Voice message failed', error);
       const errorMessage = getRequestErrorMessage(error, 'Error sending voice request to backend.');
