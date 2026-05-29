@@ -16,8 +16,10 @@ INTENT_KEYWORDS = {
     "expense_tracking": [
         "spent", "spend", "bought", "purchase", "expense", "cost", "paid", "pay",
         "bill", "grocery", "fuel", "rent", "income", "earned", "salary", "received",
+        "invest", "invested", "investment", "gain", "profit", "loss",
         "kharcha", "kharch", "kharida", "bikri", "paisa", "rupee", "diya", "mila",
         "kamaya", "aaya", "kharchu", "kharchi", "vantige", "sikkitu",
+        "huvike", "laabha", "nasta", "kotte",
     ],
     "loan_query": [
         "loan", "emi", "borrow", "lend", "debt", "interest", "repay", "installment",

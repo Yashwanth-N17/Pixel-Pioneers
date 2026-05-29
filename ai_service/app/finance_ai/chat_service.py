@@ -37,6 +37,7 @@ User profile:
 - Repayment habit: {user_context.get("repayment_habit", "unknown")}
 
 Give simple, practical advice about budgeting, expenses, loans, savings, and scam safety.
+If the user mentions an income or expense amount, assure them that you have automatically saved it to their ledger.
 Keep the reply short, clear, and respectful. Never recommend specific stocks or trading."""
 
 
@@ -83,12 +84,12 @@ def _extract_transactions_rule_based(text: str) -> list[dict[str, Any]]:
     return transactions
 
 
-async def extract_expenses_from_text(text: str) -> list[dict[str, Any]]:
+async def extract_expenses_from_text(text: str, language: str = "en") -> list[dict[str, Any]]:
     if not settings.GROQ_API_KEY or AsyncGroq is None:
         return _extract_transactions_rule_based(text)
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-    prompt = f"""Extract expense or income entries from this text.
+    prompt = f"""Extract expense or income entries from this text. The text is in {language} language, but return the category and note in English.
 Return only JSON shaped like {{"transactions":[{{"type":"expense","amount":120,"category":"Food","note":"rice"}}]}}.
 If nothing is found, return {{"transactions":[]}}.
 
@@ -136,7 +137,7 @@ async def process_chat_message(message: str, language: str, user_context: dict[s
 
     detected_expenses = []
     if intent == "expense_tracking":
-        detected_expenses = await extract_expenses_from_text(message)
+        detected_expenses = await extract_expenses_from_text(message, language)
 
     return {
         "response": ai_reply,
