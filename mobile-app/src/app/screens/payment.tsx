@@ -15,7 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
-import axios from "axios";
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { endpoints } from '../../services/api';
 import { useStore } from '../../store';
@@ -41,6 +41,9 @@ const CATEGORIES = [
   'Other',
 ];
 
+const isRazorpayNativeAvailable = () =>
+  Constants.appOwnership !== 'expo' && typeof (RazorpayCheckout as any)?.open === 'function';
+
 // ── Component ──────────────────────────────────────────
 export default function PaymentScreen() {
   const router = useRouter();
@@ -63,6 +66,14 @@ export default function PaymentScreen() {
     // Basic validation
     if (!form.amount || parseFloat(form.amount) < 1) {
       Alert.alert('Invalid Amount', 'Please enter an amount of at least ₹1');
+      return;
+    }
+
+    if (!isRazorpayNativeAvailable()) {
+      Alert.alert(
+        'Razorpay unavailable',
+        'Razorpay needs a custom development build or production app. It does not run inside Expo Go because the native module is not bundled.'
+      );
       return;
     }
 
@@ -185,6 +196,14 @@ export default function PaymentScreen() {
 
       setPaymentStatus('failed');
       console.error('[PAYMENT ERROR]', error);
+
+      if (String(error?.message || '').includes("Cannot read property 'open' of null")) {
+        Alert.alert(
+          'Razorpay native module missing',
+          'Create and run a custom dev build after installing react-native-razorpay. Expo Go cannot open Razorpay checkout.'
+        );
+        return;
+      }
 
       Alert.alert(
         '❌ Payment Failed',

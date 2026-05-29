@@ -14,6 +14,7 @@ import { useStore } from '../../store';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { MicButton } from '../../components/voice/MicButton';
 import { Waveform } from '../../components/voice/Waveform';
+import { createVoiceSocket, endpoints } from '../../services/api';
 
 type ChatMessage = { role: 'ai' | 'user'; text: string };
 
@@ -29,6 +30,8 @@ export default function VoiceScreen() {
   ]);
   const [interimText, setInterimText] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  
+  const voiceSocketRef = useRef<ReturnType<typeof createVoiceSocket> | null>(null);
 
   const { start, stop, normalizedLevel, isRecording } = useAudioRecorder();
 
@@ -53,30 +56,89 @@ export default function VoiceScreen() {
     transform: [{ scale: idlePulse.value }],
   }));
 
-  const ask = () => {
+  const ask = async () => {
     if (!prompt.trim()) return;
-    const reply =
-      occupation === 'FARMER'
-        ? 'For your farm profile, record input costs first and compare mandi rates before selling.'
-        : occupation === 'SHOP_OWNER'
-          ? 'For your shop profile, collect old udhar before adding new supplier credit.'
-          : occupation === 'TAILOR'
-            ? 'For your tailor profile, group similar orders to save cloth and delivery time.'
-            : 'For your wage profile, log each shift day and mark payment received separately.';
-    setMessages((current) => [
-      ...current,
-      { role: 'user', text: prompt.trim() },
-      { role: 'ai', text: reply },
-    ]);
+    
+    // Optimistically add user text
+    const text = prompt.trim();
+    setMessages((current) => [...current, { role: 'user', text }]);
     setPrompt('');
+    setInterimText('Thinking...');
+    
+    try {
+      const res = await endpoints.financialGuidance(text, 'en');
+      // res might be { data: { ... } } or just data because of unwrapper
+      const reply = res.data?.responseText || res.data?.response || res.data || "I couldn't process that.";
+      
+      setMessages((current) => [...current, { role: 'ai', text: typeof reply === 'string' ? reply : JSON.stringify(reply) }]);
+    } catch (err) {
+      setMessages((current) => [...current, { role: 'ai', text: 'Error connecting to AI text service.' }]);
+    } finally {
+      setInterimText('');
+    }
+  };
+
+  const processAudioRecording = async (audioUri: string) => {
+    setInterimText('Connecting...');
+    
+    const socket = createVoiceSocket({
+      onConnected: () => {
+        socket.start({ filename: 'recording.m4a', mimeType: 'audio/m4a' });
+      },
+      onReady: async () => {
+        setInterimText('Uploading audio...');
+        try {
+          const response = await fetch(audioUri);
+          const blob = await response.blob();
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const buffer = e.target?.result as ArrayBuffer;
+            if (buffer) {
+              socket.sendChunk(buffer);
+              socket.end();
+            }
+          };
+          reader.readAsArrayBuffer(blob);
+        } catch (err) {
+          setInterimText('Error reading audio file.');
+          socket.close();
+        }
+      },
+      onProcessing: () => setInterimText('Thinking...'),
+      onResponse: (payload) => {
+        if (payload?.transcript) {
+          setMessages((current) => [
+            ...current,
+            { role: 'user', text: payload.transcript },
+            { role: 'ai', text: payload.responseText || 'Received audio response.' },
+          ]);
+        } else {
+          setMessages((current) => [
+            ...current,
+            { role: 'ai', text: payload?.responseText || 'Done processing audio.' },
+          ]);
+        }
+        setInterimText('');
+        socket.close();
+        voiceSocketRef.current = null;
+      },
+      onError: (err) => {
+        setInterimText('Error: ' + err);
+        socket.close();
+        voiceSocketRef.current = null;
+      }
+    });
+
+    voiceSocketRef.current = socket;
   };
 
   const handleMicPress = async () => {
     if (isRecording) {
       const uri = await stop();
-      setInterimText('');
-      if (prompt.trim()) {
-        ask();
+      if (uri) {
+        processAudioRecording(uri);
+      } else {
+        setInterimText('');
       }
     } else {
       setInterimText('Listening…');

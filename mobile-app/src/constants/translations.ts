@@ -5,15 +5,26 @@ export type TranslationSet = {
   tagline: string;
   welcome: string;
   selectLanguage: string;
+  chooseLanguage: string;
   createAccountTitle: string;
   createAccountSubtitle: string;
+  createAccount: string;
   loginTitle: string;
   loginSubtitle: string;
+  loginToAccount: string;
   signupDetails: string;
   fullName: string;
   mobileNumber: string;
   password: string;
   chooseProfession: string;
+  farmer: string;
+  farmerSub: string;
+  shopOwner: string;
+  shopOwnerSub: string;
+  tailor: string;
+  tailorSub: string;
+  dailyWage: string;
+  dailyWageSub: string;
   register: string;
   alreadyHaveAccount: string;
   login: string;
@@ -67,7 +78,16 @@ export type TranslationSet = {
   workProfile: string;
   profession: string;
   preferences: string;
+  enableFraudWarnings: string;
+  notificationsAlerts: string;
+  largeAccessibilityText: string;
+  biometricPasskeyAccess: string;
+  privacyPolicy: string;
+  helpAndSupport: string;
+  aboutArthSaathi: string;
+  arthSaathiUser: string;
   logout: string;
+  logOut: string;
   version: string;
   loanRiskTitle: string;
   estimatedEligibleAmount: string;
@@ -144,6 +164,9 @@ export type TranslationSet = {
   whyThisScore: string;
   riskFactors: string;
   recommendedProducts: string;
+  sbiKisanCreditCard: string;
+  nabardFarmLoan: string;
+  grameenMfiLoan: string;
   basedOnIncomeExpensesHabits: string;
   monthlyEmiVsIncomeOverTenure: string;
   regularTransactionsRecorded: string;
@@ -176,15 +199,26 @@ const english: TranslationSet = {
   tagline: 'Voice-first financial assistant',
   welcome: 'Welcome to ArthSaathi',
   selectLanguage: 'Choose your language',
+  chooseLanguage: 'Choose your language',
   createAccountTitle: 'Create account',
   createAccountSubtitle: 'Sign up once, then answer work questions by typing or voice.',
+  createAccount: 'Create new account',
   loginTitle: 'Login',
   loginSubtitle: 'Continue with your mobile number and password.',
+  loginToAccount: 'Login to existing account',
   signupDetails: 'Signup details',
   fullName: 'Full name',
   mobileNumber: 'Mobile number',
   password: 'Password',
   chooseProfession: 'Choose profession',
+  farmer: 'Farmer',
+  farmerSub: 'Mandi, crops, RTC and input costs',
+  shopOwner: 'Grocery Shop',
+  shopOwnerSub: 'Udhar, inventory and supplier credit',
+  tailor: 'Tailor',
+  tailorSub: 'Orders, cloth yield and delivery dates',
+  dailyWage: 'Daily Wage',
+  dailyWageSub: 'Shift days, payments and work stability',
   register: 'Register',
   alreadyHaveAccount: 'Already have an account? Login',
   login: 'Login',
@@ -234,7 +268,16 @@ const english: TranslationSet = {
   workProfile: 'Work profile',
   profession: 'Profession',
   preferences: 'Preferences',
+  enableFraudWarnings: 'Enable fraud warnings',
+  notificationsAlerts: 'Notifications and alerts',
+  largeAccessibilityText: 'Large accessibility text',
+  biometricPasskeyAccess: 'Biometric / passkey access',
+  privacyPolicy: 'Privacy Policy',
+  helpAndSupport: 'Help and Support',
+  aboutArthSaathi: 'About ArthSaathi',
+  arthSaathiUser: 'ArthSaathi User',
   logout: 'Log Out',
+  logOut: 'Log Out',
   version: 'Version',
   loanRiskTitle: 'Loan Risk Check',
   estimatedEligibleAmount: 'Estimated eligible amount',
@@ -315,6 +358,9 @@ const english: TranslationSet = {
   whyThisScore: 'Why This Score?',
   riskFactors: 'Risk Factors',
   recommendedProducts: 'Recommended Products',
+  sbiKisanCreditCard: 'SBI Kisan Credit Card',
+  nabardFarmLoan: 'NABARD Farm Loan',
+  grameenMfiLoan: 'Grameen MFI Loan',
   basedOnIncomeExpensesHabits: 'Based on your income, expenses & repayment habits',
   monthlyEmiVsIncomeOverTenure: 'Monthly EMI vs. Income over loan tenure',
   regularTransactionsRecorded: 'Regular transactions recorded',
@@ -342,7 +388,62 @@ const english: TranslationSet = {
   monthly: 'Monthly',
 };
 
-const hindi: TranslationSet = {
+const cp1252ByteMap: Record<number, number> = {
+  0x20AC: 0x80,
+  0x201A: 0x82,
+  0x0192: 0x83,
+  0x201E: 0x84,
+  0x2026: 0x85,
+  0x2020: 0x86,
+  0x2021: 0x87,
+  0x02C6: 0x88,
+  0x2030: 0x89,
+  0x0160: 0x8A,
+  0x2039: 0x8B,
+  0x0152: 0x8C,
+  0x017D: 0x8E,
+  0x2018: 0x91,
+  0x2019: 0x92,
+  0x201C: 0x93,
+  0x201D: 0x94,
+  0x2022: 0x95,
+  0x2013: 0x96,
+  0x2014: 0x97,
+  0x02DC: 0x98,
+  0x2122: 0x99,
+  0x0161: 0x9A,
+  0x203A: 0x9B,
+  0x0153: 0x9C,
+  0x017E: 0x9E,
+  0x0178: 0x9F,
+};
+
+function decodeCp1252Mojibake(value: string) {
+  const hasHindiMojibake = Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint === 0x00E0 || codePoint === 0x00A4 || codePoint === 0x00A5;
+  });
+  if (!hasHindiMojibake) return value;
+
+  try {
+    const encodedBytes = Array.from(value).map((character) => {
+      const codePoint = character.codePointAt(0) || 0;
+      const byte = cp1252ByteMap[codePoint] ?? codePoint;
+      return `%${byte.toString(16).padStart(2, '0')}`;
+    });
+    return decodeURIComponent(encodedBytes.join(''));
+  } catch {
+    return value;
+  }
+}
+
+function repairHindiTranslations(translations: TranslationSet): TranslationSet {
+  return Object.fromEntries(
+    Object.entries(translations).map(([key, value]) => [key, decodeCp1252Mojibake(value)])
+  ) as TranslationSet;
+}
+
+const hindi: TranslationSet = repairHindiTranslations({
   ...english,
   tagline: 'à¤†à¤µà¤¾à¤œà¤¼-à¤†à¤§à¤¾à¤°à¤¿à¤¤ à¤µà¤¿à¤¤à¥à¤¤à¥€à¤¯ à¤¸à¤¹à¤¾à¤¯à¤•',
   welcome: 'ArthSaathi à¤®à¥‡à¤‚ à¤†à¤ªà¤•à¤¾ à¤¸à¥à¤µà¤¾à¤—à¤¤ à¤¹à¥ˆ',
@@ -356,6 +457,14 @@ const hindi: TranslationSet = {
   mobileNumber: 'à¤®à¥‹à¤¬à¤¾à¤‡à¤² à¤¨à¤‚à¤¬à¤°',
   password: 'à¤ªà¤¾à¤¸à¤µà¤°à¥à¤¡',
   chooseProfession: 'à¤ªà¥‡à¤¶à¤¾ à¤šà¥à¤¨à¥‡à¤‚',
+  farmer: 'किसान',
+  farmerSub: 'मंडी, फसल, RTC और इनपुट खर्च',
+  shopOwner: 'किराना दुकान',
+  shopOwnerSub: 'उधार, स्टॉक और सप्लायर क्रेडिट',
+  tailor: 'दर्जी',
+  tailorSub: 'ऑर्डर, कपड़ा और डिलीवरी तारीखें',
+  dailyWage: 'दिहाड़ी मजदूर',
+  dailyWageSub: 'शिफ्ट दिन, भुगतान और काम की स्थिरता',
   register: 'à¤°à¤œà¤¿à¤¸à¥à¤Ÿà¤°',
   alreadyHaveAccount: 'à¤ªà¤¹à¤²à¥‡ à¤¸à¥‡ à¤–à¤¾à¤¤à¤¾ à¤¹à¥ˆ? à¤²à¥‰à¤—à¤¿à¤¨ à¤•à¤°à¥‡à¤‚',
   login: 'à¤²à¥‰à¤—à¤¿à¤¨',
@@ -403,7 +512,16 @@ const hindi: TranslationSet = {
   workProfile: 'à¤•à¤¾à¤® à¤ªà¥à¤°à¥‹à¤«à¤¾à¤‡à¤²',
   profession: 'à¤ªà¥‡à¤¶à¤¾',
   preferences: 'à¤ªà¤¸à¤‚à¤¦',
+  enableFraudWarnings: 'धोखाधड़ी चेतावनी चालू करें',
+  notificationsAlerts: 'सूचनाएं और अलर्ट',
+  largeAccessibilityText: 'बड़ा टेक्स्ट',
+  biometricPasskeyAccess: 'बायोमेट्रिक / पासकी एक्सेस',
+  privacyPolicy: 'गोपनीयता नीति',
+  helpAndSupport: 'सहायता और समर्थन',
+  aboutArthSaathi: 'ArthSaathi के बारे में',
+  arthSaathiUser: 'ArthSaathi उपयोगकर्ता',
   logout: 'à¤²à¥‰à¤—à¤†à¤‰à¤Ÿ',
+  logOut: 'लॉग आउट',
   version: 'à¤¸à¤‚à¤¸à¥à¤•à¤°à¤£',
   loanRiskTitle: 'à¤²à¥‹à¤¨ à¤œà¥‹à¤–à¤¿à¤® à¤œà¤¾à¤‚à¤š',
   estimatedEligibleAmount: 'à¤…à¤¨à¥à¤®à¤¾à¤¨à¤¿à¤¤ à¤¯à¥‹à¤—à¥à¤¯ à¤°à¤¾à¤¶à¤¿',
@@ -458,7 +576,7 @@ const hindi: TranslationSet = {
   paymentDue: 'à¤¦à¥‡à¤¯ à¤­à¥à¤—à¤¤à¤¾à¤¨',
   noShiftsLogged: 'à¤…à¤­à¥€ à¤•à¥‹à¤ˆ à¤¶à¤¿à¤«à¥à¤Ÿ à¤¦à¤°à¥à¤œ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤',
   noPendingPayments: 'à¤•à¥‹à¤ˆ à¤­à¥à¤—à¤¤à¤¾à¤¨ à¤²à¤‚à¤¬à¤¿à¤¤ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤',
-};
+});
 
 const kannada: TranslationSet = {
   ...english,
@@ -631,7 +749,3 @@ export const TRANSLATIONS: Record<Lang, TranslationSet> = {
   Tamil: english,
   Telugu: english,
 };
-
-
-
-

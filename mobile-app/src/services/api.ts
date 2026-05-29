@@ -10,16 +10,17 @@ import { getToken } from './auth';
 const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
 const envVoiceUrl = process.env.EXPO_PUBLIC_VOICE_URL;
 
-const expoHost =
-  Constants.expoConfig?.hostUri?.split(':')[0] ||
-  (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0] ||
-  null;
+// const expoHost =
+//   Constants.expoConfig?.hostUri?.split(':')[0] ||
+//   (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0] ||
+//   null;
 
-const fallbackApi = expoHost ? `http://${expoHost}:3000/api` : 'http://192.168.29.9:3000/api';
-const fallbackVoice = expoHost ? `http://${expoHost}:8001/api` : 'http://192.168.29.9:8001/api';
+const fallbackApi = 'http://10.60.229.1:3000/api';
+const fallbackVoice = 'http://10.60.229.1:8001/api';
 
-const BASE = envApiUrl ?? fallbackApi;
-const VOICE = envVoiceUrl ?? fallbackVoice;
+// Temporarily hardcoding to fallbacks to bypass stale .env variables
+const BASE = fallbackApi;
+const VOICE = fallbackVoice;
 
 console.log('[API][BOOT] Resolved API baseURL:', BASE);
 console.log('[API][BOOT] Resolved Voice baseURL:', VOICE);
@@ -201,6 +202,67 @@ export const endpoints = {
   // ── Dashboard ───────────────────────────
   getDashboard: () => api.get('/dashboard'),
 
+  // ── SHG Digital Banking ─────────────────
+  createShgGroup: (body: {
+    name: string;
+    approvalThreshold?: number;
+  }) => api.post('/shg/groups', body),
+
+  joinShgGroup: (body: {
+    groupId?: string;
+    inviteCode?: string;
+  }) => api.post('/shg/groups/join', body),
+
+  getMyShgGroups: () => api.get('/shg/groups/my'),
+
+  getShgDashboard: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/dashboard`),
+
+  getShgMembers: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/members`),
+
+  getShgTransactions: (groupId: string, params?: {
+    type?: 'deposit' | 'withdrawal' | 'loan_repayment';
+    status?: 'pending' | 'approved' | 'rejected' | 'executed';
+  }) => api.get(`/shg/groups/${groupId}/transactions`, { params }),
+
+  createShgTransaction: (groupId: string, body: {
+    type: 'deposit' | 'withdrawal' | 'loan_repayment';
+    amount: number;
+    description?: string;
+    metadata?: Record<string, any>;
+  }) => api.post(`/shg/groups/${groupId}/transactions`, body),
+
+  getShgApprovals: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/approvals`),
+
+  approveShgTransaction: (transactionId: string, remarks?: string) =>
+    api.post(`/shg/transactions/${transactionId}/approve`, { remarks }),
+
+  rejectShgTransaction: (transactionId: string, remarks?: string) =>
+    api.post(`/shg/transactions/${transactionId}/reject`, { remarks }),
+
+  getShgProposals: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/proposals`),
+
+  createShgProposal: (groupId: string, body: {
+    title: string;
+    description?: string;
+    deadline?: string;
+  }) => api.post(`/shg/groups/${groupId}/proposals`, body),
+
+  voteShgProposal: (proposalId: string, vote: 'yes' | 'no') =>
+    api.post(`/shg/proposals/${proposalId}/vote`, { vote }),
+
+  getShgNotifications: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/notifications`),
+
+  markShgNotificationRead: (notificationId: string) =>
+    api.patch(`/shg/notifications/${notificationId}/read`),
+
+  getShgAuditLogs: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/audit-logs`),
+
   // ── AI ──────────────────────────────────
   financialGuidance: (query: string, language: string) =>
     api.post('/ai/financial-guidance', { query, language }),
@@ -265,3 +327,122 @@ getPaymentAnalytics: () => api.get('/payments/analytics'),
  */
 getPaymentById: (id: string) => api.get(`/payments/${id}`),
 };
+
+// ─────────────────────────────────────────
+// Voice WebSocket Connection Helper
+// ─────────────────────────────────────────
+
+export function getWebSocketBaseUrl(httpUrl: string): string {
+  if (httpUrl.startsWith('https://')) {
+    return httpUrl.replace('https://', 'wss://').replace(/\/api\/?$/, '');
+  }
+  return httpUrl.replace('http://', 'ws://').replace(/\/api\/?$/, '');
+}
+
+export function createVoiceSocket({
+  backendUrl = getWebSocketBaseUrl(VOICE),
+  onConnected,
+  onReady,
+  onChunkReceived,
+  onProcessing,
+  onResponse,
+  onCancelled,
+  onError
+}: {
+  backendUrl?: string;
+  onConnected?: (msg: any) => void;
+  onReady?: (msg: any) => void;
+  onChunkReceived?: (msg: any) => void;
+  onProcessing?: (msg: any) => void;
+  onResponse?: (payload: any) => void;
+  onCancelled?: (msg: any) => void;
+  onError?: (error: string) => void;
+}) {
+  const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+  const socket = new WebSocket(`${backendUrl}/ws/voice?sessionId=${sessionId}`);
+
+  socket.binaryType = "arraybuffer";
+
+  socket.onmessage = (event) => {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch (e) {
+      return;
+    }
+
+    switch (message.type) {
+      case "connected":
+        onConnected?.(message);
+        break;
+      case "voice.ready":
+        onReady?.(message);
+        break;
+      case "voice.chunk_received":
+        onChunkReceived?.(message);
+        break;
+      case "voice.processing":
+        onProcessing?.(message);
+        break;
+      case "voice.response":
+        onResponse?.(message.payload);
+        break;
+      case "voice.cancelled":
+        onCancelled?.(message);
+        break;
+      case "error":
+        onError?.(message.error || "An unknown error occurred.");
+        break;
+      default:
+        break;
+    }
+  };
+
+  socket.onerror = (error) => {
+    console.error("WebSocket error:", error);
+    onError?.("WebSocket connection failed.");
+  };
+
+  return {
+    sessionId,
+
+    start(metadata: { filename?: string; mimeType?: string } = {}) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: "voice.start",
+          sessionId,
+          filename: metadata.filename || "voice.webm",
+          mimeType: metadata.mimeType || "audio/webm"
+        }));
+      }
+    },
+
+    sendChunk(chunk: ArrayBuffer) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(chunk);
+      }
+    },
+
+    end() {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "voice.end" }));
+      }
+    },
+
+    cancel() {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "voice.cancel" }));
+      }
+    },
+
+    ping() {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "ping" }));
+      }
+    },
+
+    close() {
+      socket.close();
+    }
+  };
+}
