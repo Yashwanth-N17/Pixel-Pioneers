@@ -20,7 +20,7 @@ app.use(
   cors({
     origin: "*", // In production, restrict to your frontend domain
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-razorpay-signature"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-razorpay-signature", "x-session-id"],
   })
 );
 

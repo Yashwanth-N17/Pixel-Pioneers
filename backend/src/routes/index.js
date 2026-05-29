@@ -16,6 +16,8 @@ const paymentsRoutes = require("../modules/payments/payments.routes"); // ← NE
 
 const shgRoutes = require("../modules/shg/shg.routes");
 
+const { voiceRouter } = require("./voiceRoutes");
+
 // Health check
 router.get("/health", (req, res) => {
   res.status(200).json({
@@ -38,5 +40,6 @@ router.use("/chat", chatRoutes);
 router.use("/payments", paymentsRoutes); // ← NEW
 
 router.use("/shg", shgRoutes);
+router.use("/voice", voiceRouter);
 
 module.exports = router;
