@@ -2,6 +2,7 @@ from app.models.schemas import VoiceProcessResponse
 from app.services.asr_service import SpeechToTextService
 from app.services.llm_service import LlmService
 from app.services.nlp_service import IntentRecognitionService
+from app.services.tts_service import TextToSpeechService
 from app.services.vector_store import VectorStore
 
 
@@ -11,6 +12,7 @@ class VoiceOrchestrator:
         self.intent = IntentRecognitionService()
         self.vector_store = VectorStore()
         self.llm = LlmService()
+        self.tts = TextToSpeechService()
 
     async def process_audio(
         self,
@@ -24,13 +26,18 @@ class VoiceOrchestrator:
             filename=filename,
             content_type=content_type,
         )
+
         intent_result = await self.intent.detect_intent(transcript_result.text)
+
         context = await self.vector_store.search(transcript_result.text)
+
         llm_result = await self.llm.generate_response(
             transcript=transcript_result.text,
             intent=intent_result,
             context=context,
         )
+
+        tts_result = await self.tts.synthesize(llm_result.text)
 
         confidence = round(
             (transcript_result.confidence + intent_result.confidence) / 2,
@@ -42,6 +49,8 @@ class VoiceOrchestrator:
             transcript=transcript_result.text,
             intent=intent_result.name,
             response_text=llm_result.text,
+            response_audio_base64=tts_result.audio_base64,
+            response_audio_mime_type=tts_result.audio_mime_type,
             confidence=confidence,
             data={
                 **llm_result.data,

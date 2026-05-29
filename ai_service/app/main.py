@@ -5,12 +5,16 @@ from app.models.schemas import VoiceProcessResponse
 from app.services.orchestrator import VoiceOrchestrator
 
 app = FastAPI(title=settings.APP_NAME)
+
 orchestrator = VoiceOrchestrator()
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "service": settings.APP_NAME}
+    return {
+        "status": "ok",
+        "service": settings.APP_NAME,
+    }
 
 
 @app.post("/v1/voice/process", response_model=VoiceProcessResponse)
