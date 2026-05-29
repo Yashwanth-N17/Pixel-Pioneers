@@ -6,6 +6,7 @@ const FormData = require("form-data");
 const prisma = require("../../config/db");
 const environment = require("../../config/environment");
 const logger = require("../../utils/logger");
+const transactionsService = require("../transactions/transactions.service");
 
 // Sanitize URL to prevent double slashes
 const AI_SERVICE_URL = environment.ai.serviceUrl.replace(/\/$/, "");
@@ -74,6 +75,30 @@ const saveMessages = async (
 // TEXT CHAT
 // ─────────────────────────────────────────
 
+/**
+ * Auto-insert detected expenses via the transactions service
+ */
+const processDetectedExpenses = async (userId, detectedExpenses) => {
+  if (!detectedExpenses || !Array.isArray(detectedExpenses) || detectedExpenses.length === 0) {
+    return false;
+  }
+  
+  let inserted = false;
+  for (const exp of detectedExpenses) {
+    if (exp.amount) {
+      await transactionsService.addTransaction(userId, {
+        amount: parseFloat(exp.amount),
+        type: exp.type === 'income' ? 'income' : 'expense',
+        category: exp.category || 'General',
+        note: exp.note || 'Added via AI Assistant',
+        date: new Date()
+      });
+      inserted = true;
+    }
+  }
+  return inserted;
+};
+
 const handleTextMessage = async (userId, { message, language, context }) => {
   const userContext = await getUserContext(userId);
   const lang = language || userContext?.language || "en";
@@ -123,12 +148,17 @@ const handleTextMessage = async (userId, { message, language, context }) => {
     detectedIntent
   );
 
+  // Auto-record transactions via the transactions service
+  const transactionsAdded = await processDetectedExpenses(userId, aiResponse?.detected_expenses);
+  const actionTriggers = transactionsAdded ? ["TRANSACTION_ADDED"] : [];
+
   return {
     reply: assistantReply,
     intent: detectedIntent,
     language: lang,
     detectedExpenses: aiResponse?.detected_expenses || null,
     suggestions: aiResponse?.suggestions || null,
+    actionTriggers,
   };
 };
 
@@ -194,6 +224,10 @@ const handleVoiceMessage = async (userId, audioBuffer, mimetype, language) => {
     detectedIntent
   );
 
+  // Auto-record transactions via the transactions service
+  const transactionsAdded = await processDetectedExpenses(userId, aiResponse?.detected_expenses);
+  const actionTriggers = transactionsAdded ? ["TRANSACTION_ADDED"] : [];
+
   return {
     transcribedText,
     reply: assistantReply,
@@ -201,6 +235,7 @@ const handleVoiceMessage = async (userId, audioBuffer, mimetype, language) => {
     language: lang,
     detectedExpenses: aiResponse?.detected_expenses || null,
     suggestions: aiResponse?.suggestions || null,
+    actionTriggers,
   };
 };
 
