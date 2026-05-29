@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { BudgetShell } from '../../components/budget/BudgetShell';
 import { BudgetCard, ProgressBar, money } from '../../components/budget/BudgetUi';
 import { connectBudgetRealtime } from '../../features/budget/budgetRealtime';
-import { useBudgetStore } from '../../features/budget/budgetStore';
+import { useBudgetSnapshot, useBudgetStore } from '../../features/budget/budgetStore';
 
 const actions = [
   ['Income', '/screens/income-management'],
@@ -20,10 +20,10 @@ const actions = [
 
 export default function BudgetDashboardScreen() {
   const router = useRouter();
-  const snapshot = useBudgetStore((state) => state.snapshot());
-  const aiPlan = useBudgetStore((state) => state.aiPlan);
+  const { totalIncome, totalExpenses, recommendedSavings, emergencyProgress, educationProgress, goldValue } = useBudgetSnapshot();
   const forecast = useBudgetStore((state) => state.forecast);
   const seasonalInsight = useBudgetStore((state) => state.seasonalInsight);
+  const aiPlan = useBudgetStore((state) => state.aiPlan);
 
   React.useEffect(() => {
     let disconnect: undefined | (() => void);
@@ -36,15 +36,15 @@ export default function BudgetDashboardScreen() {
   return (
     <BudgetShell title="Budget Planning" subtitle="ಬಜೆಟ್ ಯೋಜನೆ">
       <View className="flex-row gap-3">
-        <View className="flex-1"><BudgetCard title="Income" value={money(snapshot.totalIncome)} icon="trending-up" /></View>
-        <View className="flex-1"><BudgetCard title="Expenses" value={money(snapshot.totalExpenses)} icon="trending-down" /></View>
+        <View className="flex-1"><BudgetCard title="Income" value={money(totalIncome)} icon="trending-up" /></View>
+        <View className="flex-1"><BudgetCard title="Expenses" value={money(totalExpenses)} icon="trending-down" /></View>
       </View>
-      <BudgetCard title="Suggested savings" value={money(snapshot.recommendedSavings)} subtitle="AI recommended monthly target" icon="target" />
-      <BudgetCard title="Emergency fund" subtitle={`${Math.round(snapshot.emergencyProgress * 100)}% ready`} icon="shield" />
-      <ProgressBar progress={snapshot.emergencyProgress} />
-      <BudgetCard title="Education savings" subtitle={`${Math.round(snapshot.educationProgress * 100)}% ready`} icon="book-open" />
-      <ProgressBar progress={snapshot.educationProgress} />
-      <BudgetCard title="Gold savings value" value={money(snapshot.goldValue)} subtitle="Estimated future value" icon="award" />
+      <BudgetCard title="Suggested savings" value={money(recommendedSavings)} subtitle="AI recommended monthly target" icon="target" />
+      <BudgetCard title="Emergency fund" subtitle={`${Math.round(emergencyProgress * 100)}% ready`} icon="shield" />
+      <ProgressBar progress={emergencyProgress} />
+      <BudgetCard title="Education savings" subtitle={`${Math.round(educationProgress * 100)}% ready`} icon="book-open" />
+      <ProgressBar progress={educationProgress} />
+      <BudgetCard title="Gold savings value" value={money(goldValue)} subtitle="Estimated future value" icon="award" />
       <BudgetCard title="Cash flow forecast" value={forecast ? money(forecast.predictedBalance) : 'Run forecast'} subtitle={forecast?.warnings?.[0] || 'Next month balance prediction'} icon="activity" />
       <BudgetCard title="Seasonal alerts" subtitle={seasonalInsight?.riskPeriods?.join(', ') || 'No seasonal risks yet'} icon="cloud-rain" />
       <View className="gap-2 rounded-2xl bg-white p-4">

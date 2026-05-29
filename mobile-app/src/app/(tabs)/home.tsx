@@ -480,6 +480,42 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Row 4 */}
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+            {/* Budget Planner */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/screens/budget-dashboard' as any)}
+              style={{ flex: 1 }}
+            >
+              <View
+                style={{
+                  backgroundColor: '#fff', borderRadius: 14, padding: 14,
+                  flexDirection: 'row', alignItems: 'center',
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40, height: 40, borderRadius: 12,
+                    backgroundColor: `${C.violet600}1F`,
+                    alignItems: 'center', justifyContent: 'center',
+                    marginRight: 10,
+                  }}
+                >
+                  <Feather name="pie-chart" size={20} color={C.violet600} />
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#1e293b', lineHeight: 16 }}>
+                  Budget Planner
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={{ flex: 1 }} />
+          </View>
+
+
         </View>
 
         {/* ── Monthly Spending — Kotlin white card with bars ── */}

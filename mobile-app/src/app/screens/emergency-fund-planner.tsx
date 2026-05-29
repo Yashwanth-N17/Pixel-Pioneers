@@ -4,10 +4,10 @@ import { useMutation } from '@tanstack/react-query';
 import { BudgetShell } from '../../components/budget/BudgetShell';
 import { BudgetCard, Field, PrimaryButton, ProgressBar, money } from '../../components/budget/BudgetUi';
 import { budgetApi } from '../../features/budget/budgetApi';
-import { useBudgetStore } from '../../features/budget/budgetStore';
+import { useBudgetSnapshot, useBudgetStore } from '../../features/budget/budgetStore';
 
 export default function EmergencyFundPlannerScreen() {
-  const snapshot = useBudgetStore((state) => state.snapshot());
+  const snapshot = useBudgetSnapshot();
   const emergencyFund = useBudgetStore((state) => state.emergencyFund);
   const setEmergencyFund = useBudgetStore((state) => state.setEmergencyFund);
   const [currentSaved, setCurrentSaved] = React.useState('2500');
