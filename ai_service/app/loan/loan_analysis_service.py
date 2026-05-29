@@ -1,15 +1,18 @@
-# ai_service/app/loan/loan_analysis_service.py
-# Orchestrates the full loan intelligence analysis
-
-from openai import OpenAI
 import os
 import json
 
+from app.core.config import settings
 from .arthscore_engine import calculate_arth_score, _calculate_emi
 from .repayment_forecast import generate_forecast
 from .recommendation_engine import get_recommendations
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = None
+if settings.GROQ_API_KEY:
+    try:
+        from groq import Groq
+        client = Groq(api_key=settings.GROQ_API_KEY)
+    except Exception:
+        client = None
 
 
 def analyze_loan(payload: dict) -> dict:
@@ -66,8 +69,8 @@ def analyze_loan(payload: dict) -> dict:
         profile.get("loanHistory", [])
     )
 
-    # ── 7. AI-generated recommendation (GPT) ─────────────
-    ai_recommendation = _generate_ai_recommendation(
+    # ── 7. AI-generated recommendation (Groq) ─────────────
+    ai_recommendations = _generate_ai_recommendations(
         arth_score, risk_level, avg_income, emi,
         eligible_amount, purpose, occupation
     )
@@ -90,7 +93,7 @@ def analyze_loan(payload: dict) -> dict:
         "positiveFactors": factors["positive"],
         "negativeFactors": factors["negative"],
         "riskFactors": factors["risk"],
-        "recommendations": [ai_recommendation] if ai_recommendation else [],
+        "recommendations": ai_recommendations,
         "recommendedProducts": products,
     }
 
@@ -183,12 +186,40 @@ def _analyze_factors(avg_income, avg_expense, seasonal, land_owned,
     return {"positive": positive, "negative": negative, "risk": risk}
 
 
-def _generate_ai_recommendation(arth_score, risk_level, avg_income,
-                                 emi, eligible_amount, purpose, occupation) -> str:
+def _generate_ai_recommendations(arth_score, risk_level, avg_income,
+                                  emi, eligible_amount, purpose, occupation) -> list[str]:
+    global client
+    if not client and settings.GROQ_API_KEY:
+        try:
+            from groq import Groq
+            client = Groq(api_key=settings.GROQ_API_KEY)
+        except Exception:
+            pass
+
+    # Standard high-quality fallbacks (list of strings)
+    if risk_level == "LOW":
+        fallbacks = [
+            "Your financial profile looks strong and stable.",
+            "You are well-positioned to manage this loan responsibly."
+        ]
+    elif risk_level == "MODERATE":
+        fallbacks = [
+            "You can manage this loan with consistent discipline.",
+            "Try reducing monthly expenses by 10% to keep a safe repayment margin."
+        ]
+    else:
+        fallbacks = [
+            "Consider starting with a smaller loan amount.",
+            "Building a strong repayment track record first will unlock larger limits later."
+        ]
+
+    if not client:
+        return fallbacks
+
     try:
         prompt = f"""
-You are ArthSaathi, a financial assistant for rural India. 
-Write a 2-sentence loan recommendation in simple English for this user:
+You are ArthSaathi, a warm financial assistant for rural India. 
+Based on the following user stats, generate 2 simple, practical loan recommendations for this user in English.
 - ArthScore: {arth_score}/1000
 - Risk: {risk_level}
 - Monthly Income: ₹{avg_income}
@@ -197,20 +228,22 @@ Write a 2-sentence loan recommendation in simple English for this user:
 - Loan Purpose: {purpose}
 - Occupation: {occupation}
 
-Be encouraging but honest. Mention one actionable tip.
+Return a JSON object containing a "recommendations" key with a list of exactly 2 strings (each recommendation must be 1 concise sentence).
+Example format:
+{{"recommendations": ["Recommendation sentence 1.", "Recommendation sentence 2."]}}
 """
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=settings.GROQ_CHAT_MODEL or "llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=120,
-            temperature=0.7,
+            max_tokens=150,
+            temperature=0.4,
+            response_format={"type": "json_object"},
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content or "{}"
+        data = json.loads(content)
+        recommendations = data.get("recommendations", [])
+        if isinstance(recommendations, list) and len(recommendations) > 0:
+            return [str(r).strip() for r in recommendations]
+        return fallbacks
     except Exception as e:
-        # Fallback recommendation if GPT fails
-        if risk_level == "LOW":
-            return "Your financial profile looks strong. You are well-positioned to manage this loan responsibly."
-        elif risk_level == "MODERATE":
-            return "You can manage this loan with discipline. Try reducing monthly expenses by 10% before applying."
-        else:
-            return "Consider a smaller loan amount first to build your repayment track record."
+        return fallbacks

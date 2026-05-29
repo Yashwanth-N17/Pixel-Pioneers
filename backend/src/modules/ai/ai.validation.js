@@ -13,7 +13,7 @@ const financialGuidanceValidation = [
     .withMessage("Query must be between 5 and 1000 characters."),
 
   body("language")
-    .optional()
+    .optional({ values: "null" })
     .isIn(["en", "hi", "kn", "te", "ta", "mr"])
     .withMessage("Unsupported language code."),
 ];
@@ -51,31 +51,31 @@ const loanAnalysisValidation = [
     ]).withMessage("Invalid loan purpose."),
 
   body("collateralValue")
-    .optional()
+    .optional({ values: "null" })
     .isFloat({ min: 0 }).withMessage("Collateral value must be a positive number."),
 ];
 
 const budgetPlanValidation = [
   body("income").isFloat({ min: 0 }).withMessage("income must be a non-negative number."),
   body("expenses").isObject().withMessage("expenses must be an object."),
-  body("goals").optional().isObject().withMessage("goals must be an object."),
+  body("goals").optional({ values: "null" }).isObject().withMessage("goals must be an object."),
 ];
 
 const emergencyFundValidation = [
   body("monthlyExpenses")
-    .optional()
+    .optional({ values: "null" })
     .isFloat({ min: 0 })
     .withMessage("monthlyExpenses must be a non-negative number."),
   body("expenses")
-    .optional()
+    .optional({ values: "null" })
     .isFloat({ min: 0 })
     .withMessage("expenses must be a non-negative number."),
   body("currentSaved")
-    .optional()
+    .optional({ values: "null" })
     .isFloat({ min: 0 })
     .withMessage("currentSaved must be a non-negative number."),
   body("reserveMonths")
-    .optional()
+    .optional({ values: "null" })
     .isInt({ min: 3, max: 6 })
     .withMessage("reserveMonths must be between 3 and 6."),
 ];
@@ -83,8 +83,8 @@ const emergencyFundValidation = [
 const educationPlanValidation = [
   body("childAge").isInt({ min: 0, max: 25 }).withMessage("childAge must be valid."),
   body("targetAmount").isFloat({ min: 1 }).withMessage("targetAmount is required."),
-  body("targetYear").optional().isInt({ min: 2026 }).withMessage("targetYear must be valid."),
-  body("yearsRemaining").optional().isInt({ min: 1 }).withMessage("yearsRemaining must be valid."),
+  body("targetYear").optional({ values: "null" }).isInt({ min: 2026 }).withMessage("targetYear must be valid."),
+  body("yearsRemaining").optional({ values: "null" }).isInt({ min: 1 }).withMessage("yearsRemaining must be valid."),
 ];
 
 const goldPlanValidation = [
@@ -94,12 +94,12 @@ const goldPlanValidation = [
 const cashflowForecastValidation = [
   body("income").isFloat({ min: 0 }).withMessage("income must be non-negative."),
   body("expenses").isFloat({ min: 0 }).withMessage("expenses must be non-negative."),
-  body("currentBalance").optional().isFloat().withMessage("currentBalance must be numeric."),
+  body("currentBalance").optional({ values: "null" }).isFloat().withMessage("currentBalance must be numeric."),
 ];
 
 const seasonalIncomeValidation = [
-  body("incomeSources").optional().isArray().withMessage("incomeSources must be an array."),
-  body("expenses").optional().isObject().withMessage("expenses must be an object."),
+  body("incomeSources").optional({ values: "null" }).isArray().withMessage("incomeSources must be an array."),
+  body("expenses").optional({ values: "null" }).isObject().withMessage("expenses must be an object."),
 ];
 
 module.exports = {
