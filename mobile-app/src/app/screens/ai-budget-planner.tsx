@@ -5,10 +5,10 @@ import { useMutation } from '@tanstack/react-query';
 import { BudgetShell } from '../../components/budget/BudgetShell';
 import { BudgetCard, PrimaryButton, money } from '../../components/budget/BudgetUi';
 import { budgetApi } from '../../features/budget/budgetApi';
-import { useBudgetStore } from '../../features/budget/budgetStore';
+import { useBudgetSnapshot, useBudgetStore } from '../../features/budget/budgetStore';
 
 export default function AiBudgetPlannerScreen() {
-  const snapshot = useBudgetStore((state) => state.snapshot());
+  const snapshot = useBudgetSnapshot();
   const expenses = useBudgetStore((state) => state.expenses);
   const aiPlan = useBudgetStore((state) => state.aiPlan);
   const setAiPlan = useBudgetStore((state) => state.setAiPlan);

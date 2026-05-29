@@ -5,10 +5,10 @@ import { useMutation } from '@tanstack/react-query';
 import { BudgetShell } from '../../components/budget/BudgetShell';
 import { BudgetCard, Field, PrimaryButton, money } from '../../components/budget/BudgetUi';
 import { budgetApi } from '../../features/budget/budgetApi';
-import { useBudgetStore } from '../../features/budget/budgetStore';
+import { useBudgetSnapshot, useBudgetStore } from '../../features/budget/budgetStore';
 
 export default function CashFlowForecastScreen() {
-  const snapshot = useBudgetStore((state) => state.snapshot());
+  const snapshot = useBudgetSnapshot();
   const forecast = useBudgetStore((state) => state.forecast);
   const setForecast = useBudgetStore((state) => state.setForecast);
   const [currentBalance, setCurrentBalance] = React.useState('5000');

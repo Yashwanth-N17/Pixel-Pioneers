@@ -94,3 +94,34 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
     };
   },
 }));
+
+/**
+ * Safe hook for derived budget values.
+ * Reads only primitive/stable slices from the store to avoid returning
+ * a new object reference on every render (which causes useSyncExternalStore
+ * to think the store changed and triggers an infinite loop).
+ */
+export function useBudgetSnapshot() {
+  const totalIncome = useBudgetStore((s) =>
+    s.incomeSources.reduce((sum, item) => sum + item.amount, 0)
+  );
+  const totalExpenses = useBudgetStore((s) =>
+    s.expenses.reduce((sum, item) => sum + item.amount, 0)
+  );
+  const aiRecommendedSavings = useBudgetStore((s) => s.aiPlan?.recommendedSavings ?? null);
+  const emergencyReserveTarget = useBudgetStore((s) => s.emergencyFund?.reserveTarget ?? null);
+  const emergencyCurrentSaved = useBudgetStore((s) => s.emergencyFund?.currentSaved ?? null);
+  const educationFutureCost = useBudgetStore((s) => s.educationPlans[0]?.estimatedFutureCost ?? null);
+  const educationSaved = useBudgetStore((s) => s.educationPlans[0]?.savedAmount ?? null);
+  const goldValue = useBudgetStore((s) => s.goldSavingsData?.estimatedGrowth ?? 0);
+
+  const recommendedSavings = aiRecommendedSavings ?? Math.max(0, totalIncome - totalExpenses);
+  const emergencyProgress = emergencyReserveTarget
+    ? Math.min(1, (emergencyCurrentSaved || 0) / emergencyReserveTarget)
+    : 0.18;
+  const educationProgress = educationFutureCost
+    ? Math.min(1, (educationSaved || 0) / educationFutureCost)
+    : 0.12;
+
+  return { totalIncome, totalExpenses, recommendedSavings, emergencyProgress, educationProgress, goldValue };
+}
