@@ -20,6 +20,7 @@ import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { MicButton } from '../../components/voice/MicButton';
 import { Waveform } from '../../components/voice/Waveform';
 import { endpoints } from '../../services/api';
+import { speakText, stopSpeaking } from '../../services/tts';
 import type { Lang } from '../../types';
 
 type ChatMessage = { role: 'ai' | 'user'; text: string };
@@ -58,10 +59,14 @@ export default function VoiceScreen() {
   ]);
   const [interimText, setInterimText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isSpeechEnabled, setIsSpeechEnabled] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const { start, stop, normalizedLevel, isRecording } = useAudioRecorder();
   const languageCode = languageCodeByName[language] || 'en';
+  const latestAiMessage = [...messages].reverse().find((message) => message.role === 'ai')?.text || '';
+  const latestAiIndex = messages.map((message) => message.role).lastIndexOf('ai');
 
   const idlePulse = useSharedValue(1);
 
@@ -85,6 +90,25 @@ export default function VoiceScreen() {
     transform: [{ scale: idlePulse.value }],
   }));
 
+  const speakReply = (replyText: string) => {
+    if (!isSpeechEnabled) return;
+
+    void speakText(replyText, languageCode, {
+      onStart: () => setIsSpeaking(true),
+      onDone: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
+  };
+
+  const toggleSpeech = async () => {
+    const nextEnabled = !isSpeechEnabled;
+    setIsSpeechEnabled(nextEnabled);
+    if (!nextEnabled) {
+      setIsSpeaking(false);
+      await stopSpeaking();
+    }
+  };
+
   const ask = async () => {
     if (!prompt.trim() || isSending) return;
 
@@ -101,10 +125,12 @@ export default function VoiceScreen() {
         context: { occupation },
       });
       const reply = getAssistantReply(response.data?.data);
+      const replyText = typeof reply === 'string' ? reply : JSON.stringify(reply);
       setMessages((current) => [
         ...current,
-        { role: 'ai', text: typeof reply === 'string' ? reply : JSON.stringify(reply) },
+        { role: 'ai', text: replyText },
       ]);
+      speakReply(replyText);
     } catch (error) {
       console.warn('Chat message failed', error);
       const errorMessage = getRequestErrorMessage(error, 'Error connecting to chat service.');
@@ -140,12 +166,14 @@ export default function VoiceScreen() {
       const data = response.data?.data;
       const transcript = getTranscribedText(data);
       const reply = getAssistantReply(data);
+      const replyText = typeof reply === 'string' ? reply : JSON.stringify(reply);
 
       setMessages((current) => [
         ...current,
         ...(transcript ? [{ role: 'user' as const, text: transcript }] : []),
-        { role: 'ai' as const, text: typeof reply === 'string' ? reply : JSON.stringify(reply) },
+        { role: 'ai' as const, text: replyText },
       ]);
+      speakReply(replyText);
     } catch (error) {
       console.warn('Voice message failed', error);
       const errorMessage = getRequestErrorMessage(error, 'Error sending voice request to backend.');
@@ -177,7 +205,7 @@ export default function VoiceScreen() {
   };
 
   const hasSpoken = useRef(false);
-  const silenceTimer = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleMicPressRef = useRef(handleMicPress);
 
   useEffect(() => {
@@ -214,6 +242,12 @@ export default function VoiceScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages, interimText]);
 
+  useEffect(() => {
+    return () => {
+      void stopSpeaking();
+    };
+  }, []);
+
   return (
     <View className="flex-1 bg-slate-50">
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -233,9 +267,15 @@ export default function VoiceScreen() {
             <View className="flex-1 pr-4">
               <Text className="text-white text-2xl font-black">Voice Assistant</Text>
               <Text className="text-emerald-50 text-sm mt-1.5 font-medium leading-5">
-                {isRecording ? 'Listening... tap mic again to send.' : 'Tap the mic to ask a question.'}
+                {isSpeaking ? 'Speaking...' : isRecording ? 'Listening... tap mic again to send.' : 'Tap the mic to ask a question.'}
               </Text>
             </View>
+            <TouchableOpacity
+              onPress={toggleSpeech}
+              className="w-10 h-10 rounded-full bg-white/15 items-center justify-center border border-white/20 mt-1 mr-2"
+            >
+              <Feather name={isSpeechEnabled ? 'volume-2' : 'volume-x'} size={20} color="#fff" />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => router.back()}
               className="w-10 h-10 rounded-full bg-white/15 items-center justify-center border border-white/20 mt-1"
@@ -269,6 +309,20 @@ export default function VoiceScreen() {
             >
               {message.text}
             </Text>
+            {message.role === 'ai' && index === latestAiIndex ? (
+              <View className="mt-3 flex-row items-center gap-2">
+                <TouchableOpacity
+                  onPress={() => speakReply(message.text)}
+                  disabled={!isSpeechEnabled || isSpeaking}
+                  className="h-9 flex-row items-center justify-center gap-2 rounded-full bg-emerald-50 px-3"
+                  style={{ opacity: !isSpeechEnabled || isSpeaking ? 0.45 : 1 }}
+                >
+                  <Feather name="repeat" size={14} color={C.emerald600} />
+                  <Text className="text-xs font-black text-emerald-700">Replay</Text>
+                </TouchableOpacity>
+                {isSpeaking ? <Text className="text-xs font-bold text-emerald-700">Speaking...</Text> : null}
+              </View>
+            ) : null}
           </View>
         ))}
 
@@ -289,6 +343,24 @@ export default function VoiceScreen() {
             <MicButton listening={isRecording} onPress={handleMicPress} level={normalizedLevel} />
           </Animated.View>
         </View>
+
+        {!isSpeechEnabled ? (
+          <TouchableOpacity
+            onPress={toggleSpeech}
+            className="mb-3 min-h-[44px] flex-row items-center justify-center gap-2 rounded-2xl bg-slate-200"
+          >
+            <Feather name="volume-x" size={17} color="#475569" />
+            <Text className="font-black text-slate-600">Speech muted</Text>
+          </TouchableOpacity>
+        ) : latestAiMessage && isSpeaking ? (
+          <TouchableOpacity
+            onPress={() => void stopSpeaking().then(() => setIsSpeaking(false))}
+            className="mb-3 min-h-[44px] flex-row items-center justify-center gap-2 rounded-2xl bg-emerald-50"
+          >
+            <Feather name="volume-2" size={17} color={C.emerald600} />
+            <Text className="font-black text-emerald-700">Speaking...</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <View className="bg-white rounded-2xl border border-slate-200 p-2 flex-row items-center">
           <TextInput

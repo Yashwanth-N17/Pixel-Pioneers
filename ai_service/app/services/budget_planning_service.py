@@ -2,12 +2,15 @@ import json
 import math
 from typing import Any
 
-from groq import AsyncGroq
+try:
+    from groq import AsyncGroq
+except ImportError:  # pragma: no cover - allows local boot without optional AI SDK
+    AsyncGroq = None
 
 from app.core.config import settings
 
 
-MODEL = "llama3-70b-8192"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 def _num(value: Any, fallback: float = 0) -> float:
@@ -37,12 +40,12 @@ def _json_prompt(task: str, payload: dict[str, Any], shape: dict[str, Any]) -> s
 
 
 async def _ask_groq(task: str, payload: dict[str, Any], shape: dict[str, Any]) -> dict[str, Any] | None:
-    if not settings.GROQ_API_KEY:
+    if not settings.GROQ_API_KEY or AsyncGroq is None:
         return None
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
     response = await client.chat.completions.create(
-        model=MODEL,
+        model=settings.GROQ_BUDGET_MODEL or DEFAULT_MODEL,
         messages=[
             {"role": "system", "content": "Return strict JSON only."},
             {"role": "user", "content": _json_prompt(task, payload, shape)},
