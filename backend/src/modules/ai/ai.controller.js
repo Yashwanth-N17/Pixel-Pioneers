@@ -2,6 +2,7 @@
 
 const aiService = require("./ai.service");
 const loanAnalysisService = require("./loanAnalysis.service");
+const budgetPlanningService = require("./budgetPlanning.service");
 const { sendSuccess } = require("../../utils/apiResponse");
 
 /**
@@ -76,10 +77,80 @@ const getLoanAnalysisById = async (req, res, next) => {
   }
 };
 
+const budgetPlan = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.budgetPlan(req.user.id, req.body);
+    return sendSuccess(res, "Budget plan generated.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const emergencyFund = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.emergencyFund(req.user.id, req.body);
+    return sendSuccess(res, "Emergency fund plan generated.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const educationPlan = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.educationPlan(req.user.id, req.body);
+    return sendSuccess(res, "Education savings plan generated.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getGoldPrice = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.goldPrice();
+    return sendSuccess(res, "Gold price fetched.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const goldPlan = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.goldPlan(req.user.id, req.body);
+    return sendSuccess(res, "Gold savings plan generated.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const cashflowForecast = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.cashflowForecast(req.user.id, req.body);
+    return sendSuccess(res, "Cash flow forecast generated.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const seasonalIncome = async (req, res, next) => {
+  try {
+    const result = await budgetPlanningService.seasonalIncome(req.user.id, req.body);
+    return sendSuccess(res, "Seasonal income insights generated.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   financialGuidance,
   scamDetection,
   loanAnalysis,
   getLoanHistory,
   getLoanAnalysisById,
+  budgetPlan,
+  emergencyFund,
+  educationPlan,
+  getGoldPrice,
+  goldPlan,
+  cashflowForecast,
+  seasonalIncome,
 };

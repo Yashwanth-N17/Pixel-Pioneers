@@ -5,6 +5,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as NavigationBar from 'expo-navigation-bar';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient();
 
 export default function RootLayout() {
   useEffect(() => {
@@ -22,14 +25,15 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#fff' }}>
-      <StatusBar style="light" />
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#fff' }}>
+        <StatusBar style="light" />
 
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="onboarding" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="signup" />
-        <Stack.Screen name="(tabs)" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="onboarding" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="signup" />
+          <Stack.Screen name="(tabs)" />
 
         <Stack.Screen
           name="screens/voice"
@@ -61,11 +65,12 @@ export default function RootLayout() {
           options={{ presentation: 'card' }}
         />
 
-        <Stack.Screen
-          name="screens/rtc"
-          options={{ presentation: 'card' }}
-        />
-      </Stack>
-    </SafeAreaProvider>
+          <Stack.Screen
+            name="screens/rtc"
+            options={{ presentation: 'card' }}
+          />
+        </Stack>
+      </SafeAreaProvider>
+    </QueryClientProvider>
   );
 }

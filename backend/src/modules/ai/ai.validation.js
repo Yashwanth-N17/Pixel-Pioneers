@@ -55,8 +55,61 @@ const loanAnalysisValidation = [
     .isFloat({ min: 0 }).withMessage("Collateral value must be a positive number."),
 ];
 
+const budgetPlanValidation = [
+  body("income").isFloat({ min: 0 }).withMessage("income must be a non-negative number."),
+  body("expenses").isObject().withMessage("expenses must be an object."),
+  body("goals").optional().isObject().withMessage("goals must be an object."),
+];
+
+const emergencyFundValidation = [
+  body("monthlyExpenses")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("monthlyExpenses must be a non-negative number."),
+  body("expenses")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("expenses must be a non-negative number."),
+  body("currentSaved")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("currentSaved must be a non-negative number."),
+  body("reserveMonths")
+    .optional()
+    .isInt({ min: 3, max: 6 })
+    .withMessage("reserveMonths must be between 3 and 6."),
+];
+
+const educationPlanValidation = [
+  body("childAge").isInt({ min: 0, max: 25 }).withMessage("childAge must be valid."),
+  body("targetAmount").isFloat({ min: 1 }).withMessage("targetAmount is required."),
+  body("targetYear").optional().isInt({ min: 2026 }).withMessage("targetYear must be valid."),
+  body("yearsRemaining").optional().isInt({ min: 1 }).withMessage("yearsRemaining must be valid."),
+];
+
+const goldPlanValidation = [
+  body("savingsAmount").isFloat({ min: 1 }).withMessage("savingsAmount is required."),
+];
+
+const cashflowForecastValidation = [
+  body("income").isFloat({ min: 0 }).withMessage("income must be non-negative."),
+  body("expenses").isFloat({ min: 0 }).withMessage("expenses must be non-negative."),
+  body("currentBalance").optional().isFloat().withMessage("currentBalance must be numeric."),
+];
+
+const seasonalIncomeValidation = [
+  body("incomeSources").optional().isArray().withMessage("incomeSources must be an array."),
+  body("expenses").optional().isObject().withMessage("expenses must be an object."),
+];
+
 module.exports = {
   financialGuidanceValidation,
   scamDetectionValidation,
   loanAnalysisValidation,
+  budgetPlanValidation,
+  emergencyFundValidation,
+  educationPlanValidation,
+  goldPlanValidation,
+  cashflowForecastValidation,
+  seasonalIncomeValidation,
 };

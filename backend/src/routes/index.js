@@ -16,6 +16,11 @@ const paymentsRoutes = require("../modules/payments/payments.routes"); // ← NE
 
 const shgRoutes = require("../modules/shg/shg.routes");
 
+const { voiceRouter } = require("./voiceRoutes");
+const budgetRoutes = require("../modules/budget/budget.routes");
+const incomeSourceRoutes = require("../modules/incomeSource/incomeSource.routes");
+const budgetExpenseRoutes = require("../modules/budgetExpense/budgetExpense.routes");
+
 // Health check
 router.get("/health", (req, res) => {
   res.status(200).json({
@@ -38,5 +43,10 @@ router.use("/chat", chatRoutes);
 router.use("/payments", paymentsRoutes); // ← NEW
 
 router.use("/shg", shgRoutes);
+router.use("/voice", voiceRouter);
+router.use("/budget", budgetRoutes);
+router.use("/income-source", incomeSourceRoutes);
+router.use("/expenses", budgetExpenseRoutes);
+router.get("/gold-price", require("../middlewares/auth.middleware"), require("../modules/ai/ai.controller").getGoldPrice);
 
 module.exports = router;
