@@ -132,6 +132,8 @@ export default function VoiceScreen() {
         { role: 'ai', text: replyText },
       ]);
       speakReply(replyText);
+      
+      console.warn("AI TEXT CHAT RESPONSE:", JSON.stringify(response.data?.data));
 
       // Save transactions directly from frontend if AI detected them
       const detectedExpenses = response.data?.data?.detectedExpenses;
@@ -191,6 +193,8 @@ export default function VoiceScreen() {
         { role: 'ai' as const, text: replyText },
       ]);
       speakReply(replyText);
+
+      console.warn("AI VOICE CHAT RESPONSE:", JSON.stringify(data));
 
       // Save transactions directly from frontend if AI detected them
       const detectedExpenses = data?.detectedExpenses;

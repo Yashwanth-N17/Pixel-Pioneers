@@ -90,8 +90,13 @@ async def extract_expenses_from_text(text: str, language: str = "en") -> list[di
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
     prompt = f"""Extract expense or income entries from this text. The text is in {language} language, but return the category and note in English.
-Return only JSON shaped like {{"transactions":[{{"type":"expense","amount":120,"category":"Food","note":"rice"}}]}}.
-If nothing is found, return {{"transactions":[]}}.
+Return only JSON shaped like:
+{{"transactions": [
+  {{"type": "expense", "amount": 120, "category": "Food", "note": "rice"}},
+  {{"type": "income", "amount": 2000, "category": "General", "note": "earned salary"}}
+]}}
+The "type" field must be exactly "expense" or "income".
+If no money amount is found, return {{"transactions":[]}}.
 
 Text: {text}"""
 
