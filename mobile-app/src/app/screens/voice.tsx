@@ -133,7 +133,19 @@ export default function VoiceScreen() {
       ]);
       speakReply(replyText);
 
-      if (response.data?.data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
+      // Save transactions directly from frontend if AI detected them
+      const detectedExpenses = response.data?.data?.detectedExpenses;
+      if (detectedExpenses && Array.isArray(detectedExpenses) && detectedExpenses.length > 0) {
+        for (const exp of detectedExpenses) {
+          if (exp.amount) {
+            await endpoints.addTransaction({
+              amount: parseFloat(exp.amount),
+              type: exp.type === 'income' ? 'income' : 'expense',
+              category: exp.category || 'General',
+              note: exp.note || 'Added via AI Assistant',
+            }).catch(e => console.warn('Failed to add transaction via AI', e));
+          }
+        }
         void fetchDashboardData();
       }
     } catch (error) {
@@ -180,7 +192,19 @@ export default function VoiceScreen() {
       ]);
       speakReply(replyText);
 
-      if (data?.actionTriggers?.includes('TRANSACTION_ADDED')) {
+      // Save transactions directly from frontend if AI detected them
+      const detectedExpenses = data?.detectedExpenses;
+      if (detectedExpenses && Array.isArray(detectedExpenses) && detectedExpenses.length > 0) {
+        for (const exp of detectedExpenses) {
+          if (exp.amount) {
+            await endpoints.addTransaction({
+              amount: parseFloat(exp.amount),
+              type: exp.type === 'income' ? 'income' : 'expense',
+              category: exp.category || 'General',
+              note: exp.note || 'Added via AI Assistant',
+            }).catch(e => console.warn('Failed to add transaction via AI', e));
+          }
+        }
         void fetchDashboardData();
       }
     } catch (error) {

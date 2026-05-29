@@ -70,33 +70,6 @@ const saveMessages = async (
   });
 };
 
-/**
- * Auto-insert detected expenses into the database
- */
-const processDetectedExpenses = async (userId, detectedExpenses) => {
-  if (!detectedExpenses || !Array.isArray(detectedExpenses) || detectedExpenses.length === 0) {
-    return false;
-  }
-  
-  let inserted = false;
-  for (const exp of detectedExpenses) {
-    if (exp.amount) {
-      await prisma.transaction.create({
-        data: {
-          userId,
-          amount: parseFloat(exp.amount),
-          type: exp.type === 'income' ? 'income' : 'expense',
-          category: exp.category || 'General',
-          note: exp.note || 'Added via AI Assistant',
-          date: new Date()
-        }
-      });
-      inserted = true;
-    }
-  }
-  return inserted;
-};
-
 // ─────────────────────────────────────────
 // TEXT CHAT
 // ─────────────────────────────────────────
@@ -150,17 +123,12 @@ const handleTextMessage = async (userId, { message, language, context }) => {
     detectedIntent
   );
 
-  // Auto-record transactions if detected
-  const transactionsAdded = await processDetectedExpenses(userId, aiResponse?.detected_expenses);
-  const actionTriggers = transactionsAdded ? ["TRANSACTION_ADDED"] : [];
-
   return {
     reply: assistantReply,
     intent: detectedIntent,
     language: lang,
     detectedExpenses: aiResponse?.detected_expenses || null,
     suggestions: aiResponse?.suggestions || null,
-    actionTriggers,
   };
 };
 
@@ -226,10 +194,6 @@ const handleVoiceMessage = async (userId, audioBuffer, mimetype, language) => {
     detectedIntent
   );
 
-  // Auto-record transactions if detected
-  const transactionsAdded = await processDetectedExpenses(userId, aiResponse?.detected_expenses);
-  const actionTriggers = transactionsAdded ? ["TRANSACTION_ADDED"] : [];
-
   return {
     transcribedText,
     reply: assistantReply,
@@ -237,7 +201,6 @@ const handleVoiceMessage = async (userId, audioBuffer, mimetype, language) => {
     language: lang,
     detectedExpenses: aiResponse?.detected_expenses || null,
     suggestions: aiResponse?.suggestions || null,
-    actionTriggers,
   };
 };
 
