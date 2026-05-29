@@ -19,14 +19,31 @@ DEFAULT_MODEL = "llama-3.1-8b-instant"
 # Type-detection keyword sets
 # ─────────────────────────────────────────
 _INCOME_KEYWORDS = frozenset([
+    # English
     "earned", "earn", "earning", "received", "receive", "income", "salary",
     "profit", "gain", "sale", "sold", "got paid", "payment received",
-    "mila", "kamaya", "aaya", "bikri", "huvike", "laabha", "vantige", "sikkitu",
+    # Hindi / Hinglish
+    "mila", "kamaya", "aaya", "bikri", "milega", "aayi",
+    # Kannada romanized
+    "gaLisida", "sigitu", "banthide", "barthide", "huvike", "laabha",
+    "vantige", "sikkitu", "galisi", "sige", "aayitu",
+    # Telugu romanized
+    "vacchindi", "sambaadhimchanu",
+    # Tamil romanized
+    "kidaichathu", "sambadhithen",
 ])
 _EXPENSE_KEYWORDS = frozenset([
+    # English
     "spent", "spend", "bought", "buy", "paid", "pay", "expense", "cost",
     "purchased", "purchase", "bill", "grocery", "fuel", "rent", "food",
+    # Hindi / Hinglish
     "kharcha", "kharch", "kharida", "diya", "kotte", "nasta", "kharchi",
+    # Kannada romanized
+    "kharchaytu", "maadide", "kottu", "togendu", "kharch maadide",
+    # Telugu romanized
+    "kharchupettanu", "kinnanu",
+    # Tamil romanized
+    "செலவு", "vanginen",
 ])
 
 
@@ -199,7 +216,7 @@ async def process_chat_message(message: str, language: str, user_context: dict[s
     intent = classify_intent(message, language)
     logger.info("[CHAT] intent=%s language=%s", intent, language)
 
-    # ── Decide whether to extract immediately or ask for clarification ──
+    # ── Step 1: Check if message contains any monetary amount ──
     _amount_pattern = r"(?:rs\.?|inr|rupees[\s]?)[\s]?[\d,]+|(?<!\w)\d[\d,]{2,}"
     _has_amount = bool(re.search(_amount_pattern, message.lower()))
 
@@ -208,19 +225,28 @@ async def process_chat_message(message: str, language: str, user_context: dict[s
     detected_expenses: list[dict[str, Any]] = []
 
     if _has_amount:
-        if _is_type_clear(message):
-            # User clearly stated income or expense → extract and auto-save
-            detected_expenses = await extract_expenses_from_text(message, language)
-            logger.info("[CHAT] Auto-extracted %d transaction(s)", len(detected_expenses))
-        else:
-            # Amount found but type is ambiguous → ask once
-            amount = _detect_first_amount(message)
-            if amount:
-                requires_clarification = True
-                pending_transaction = {"amount": amount, "category": "General"}
-                logger.info("[CHAT] Ambiguous amount Rs %s — requesting clarification", amount)
+        # ── Step 2: Try Groq extraction first (handles all languages including Kannada script) ──
+        extracted = await extract_expenses_from_text(message, language)
 
-    # ── Generate AI reply (with clarification hint if needed) ──
+        if extracted:
+            # Groq/rule-based confidently typed the transaction → auto-save
+            detected_expenses = extracted
+            logger.info("[CHAT] Extracted %d transaction(s) with confidence", len(extracted))
+        else:
+            # Extraction returned nothing — check if English keywords clarify the type
+            if _is_type_clear(message):
+                # Keywords confirm type → run rule-based as last resort
+                detected_expenses = _extract_transactions_rule_based(message)
+                logger.info("[CHAT] Rule-based extracted %d transaction(s)", len(detected_expenses))
+            else:
+                # Truly ambiguous: no type context at all → ask once
+                amount = _detect_first_amount(message)
+                if amount:
+                    requires_clarification = True
+                    pending_transaction = {"amount": amount, "category": "General"}
+                    logger.info("[CHAT] Ambiguous amount Rs %s — requesting clarification", amount)
+
+    # ── Step 3: Generate AI reply (with clarification hint injected when needed) ──
     ai_reply = _fallback_reply(intent, language)
     if settings.GROQ_API_KEY and AsyncGroq is not None:
         client = AsyncGroq(api_key=settings.GROQ_API_KEY)
