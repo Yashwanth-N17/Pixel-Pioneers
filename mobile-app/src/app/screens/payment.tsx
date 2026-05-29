@@ -1,7 +1,4 @@
-// mobile-app/src/app/screens/payment.tsx
-// Complete Razorpay UPI payment screen
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,9 +10,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Switch
 } from 'react-native';
-import RazorpayCheckout from 'react-native-razorpay';
-import axios from "axios";
 import { useRouter } from 'expo-router';
 import { endpoints } from '../../services/api';
 import { useStore } from '../../store';
@@ -25,7 +21,10 @@ interface PaymentFormData {
   amount: string;
   description: string;
   category: string;
-  upiId: string;  // Recipient UPI ID
+  isShgPayment: boolean;
+  shgGroupId: string;
+  shgTransactionType: 'deposit' | 'loan_repayment';
+  repaymentDeadline: string;
 }
 
 const CATEGORIES = [
@@ -51,12 +50,32 @@ export default function PaymentScreen() {
     amount: '',
     description: '',
     category: 'Other',
-    upiId: '',
+    isShgPayment: false,
+    shgGroupId: '',
+    shgTransactionType: 'deposit',
+    repaymentDeadline: '', // YYYY-MM-DD
   });
+  
   const [loading, setLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<
-  'idle' | 'creating' | 'processing' | 'success' | 'failed'
->('idle');
+    'idle' | 'processing' | 'success' | 'failed'
+  >('idle');
+
+  // Pre-fetch user's SHG groups for convenience
+  const [shgGroups, setShgGroups] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    endpoints.getMyShgGroups()
+      .then(res => {
+        if (res.data?.data) {
+          setShgGroups(res.data.data);
+          if (res.data.data.length > 0) {
+            setForm(f => ({ ...f, shgGroupId: res.data.data[0].id }));
+          }
+        }
+      })
+      .catch(err => console.error('Failed to load SHG groups:', err));
+  }, []);
 
   // ── Handle Pay Button ────────────────────────────────
   const handlePay = async () => {
@@ -65,88 +84,37 @@ export default function PaymentScreen() {
       Alert.alert('Invalid Amount', 'Please enter an amount of at least ₹1');
       return;
     }
+    
+    if (form.isShgPayment && !form.shgGroupId) {
+      Alert.alert('Missing Info', 'Please provide an SHG Group ID.');
+      return;
+    }
 
     setLoading(true);
-    setPaymentStatus('creating');
+    setPaymentStatus('processing');
 
     try {
-      // ── Step 1: Create Razorpay Order ──────────────
-      // POST /api/payments/create-order
-      const orderResponse = await endpoints.createPaymentOrder({
+      // Create mock checkout order
+      const response = await endpoints.processMockCheckout({
         amount: parseFloat(form.amount),
-        description: form.description || 'HealthSehat Payment',
+        description: form.description || 'Mock Payment',
         category: form.category,
+        ...(form.isShgPayment && {
+          shgGroupId: form.shgGroupId,
+          shgTransactionType: form.shgTransactionType,
+          repaymentDeadline: form.shgTransactionType === 'loan_repayment' && form.repaymentDeadline ? new Date(form.repaymentDeadline).toISOString() : undefined,
+        })
       });
 
-      const { orderId, amount, keyId } = orderResponse.data.data;
+      const { transaction, payment, shgTransaction, lateFeeApplied } = response.data?.data || {};
 
-      setPaymentStatus('processing');
-
-      // ── Step 2: Open Razorpay Checkout ─────────────
-      // This opens GPay / PhonePe / Paytm etc.
-      // Amount is already pre-filled.
-      // User only needs to enter UPI PIN.
-      const razorpayOptions = {
-  description: form.description || 'HealthSehat Payment',
-  image: 'https://your-logo-url.com/logo.png',
-  currency: 'INR',
-  key: keyId,
-  amount: String(amount),
-  name: 'HealthSehat',
-  order_id: orderId,
-
-  prefill: {
-    email: user?.email || '',
-    contact: user?.phone || '',
-    name: user?.name || '',
-  },
-
-  notes: {
-    payment_for: 'HealthSehat',
-  },
-
-  theme: {
-    color: '#16A34A',
-  },
-
-  modal: {
-    ondismiss: () => {
-      setPaymentStatus('idle');
-      setLoading(false);
-    },
-  },
-};
-
-      // ── Step 3: Razorpay handles UPI payment ───────
-      // User sees GPay / PhonePe / Paytm
-      // User enters their UPI PIN
-      // Razorpay completes the transaction
-      const razorpayResponse = await RazorpayCheckout.open(razorpayOptions);
-
-      // razorpayResponse contains:
-      // {
-      //   razorpay_payment_id: "pay_XXXXX",
-      //   razorpay_order_id: "order_XXXXX",
-      //   razorpay_signature: "HMAC_SIGNATURE"
-      // }
-
-      // ── Step 4: Verify Payment on Backend ──────────
-      // POST /api/payments/verify
-      const verifyResponse = await endpoints.verifyPayment({
-        razorpay_order_id: razorpayResponse.razorpay_order_id,
-        razorpay_payment_id: razorpayResponse.razorpay_payment_id,
-        razorpay_signature: razorpayResponse.razorpay_signature,
-      });
-
-      const { transaction } = verifyResponse.data.data;
-
-      // ── Step 5: Update local store ─────────────────
-      if (transaction) {
+      // Local state update for non-SHG transactions to keep ledger updated instantly
+      if (transaction && !form.isShgPayment) {
         addTransaction({
           amount: parseFloat(form.amount),
           type: 'expense',
           category: form.category,
-          note: form.description || `Paid via Razorpay`,
+          note: form.description || `Paid via Mock Payment`,
           date: new Date().toISOString(),
         });
       }
@@ -154,19 +122,29 @@ export default function PaymentScreen() {
       setPaymentStatus('success');
       setLoading(false);
 
+      let successMessage = `₹${form.amount} paid successfully.\nTransaction ID: ${transaction?.id || payment?.id || 'N/A'}`;
+      
+      if (lateFeeApplied) {
+        successMessage = `Late Fee Applied: ₹${lateFeeApplied.feeAmount}\nTotal Paid: ₹${lateFeeApplied.totalAmount}\nTransaction ID: ${payment?.id}`;
+      }
+
+      if (form.isShgPayment) {
+        successMessage += `\nSHG Transaction: ${shgTransaction?.id}\nStatus: ${shgTransaction?.status}`;
+      }
+
       // Show success alert
       Alert.alert(
         '✅ Payment Successful!',
-        `₹${form.amount} paid successfully.\nTransaction ID: ${transaction?.id || 'N/A'}`,
+        successMessage,
         [
           {
-            text: 'View Transactions',
+            text: 'View Ledger',
             onPress: () => router.push('/(tabs)/ledger'),
           },
           {
-            text: 'Pay Again',
+            text: 'Done',
             onPress: () => {
-              setForm({ amount: '', description: '', category: 'Other', upiId: '' });
+              setForm(f => ({ ...f, amount: '', description: '' }));
               setPaymentStatus('idle');
             },
           },
@@ -174,17 +152,8 @@ export default function PaymentScreen() {
       );
     } catch (error: any) {
       setLoading(false);
-
-      // Razorpay throws when user cancels OR payment fails
-      // error.code === 0 means user cancelled
-      if (error?.code === 0 || error?.description === 'User cancelled') {
-        setPaymentStatus('idle');
-        Alert.alert('Payment Cancelled', 'You cancelled the payment.');
-        return;
-      }
-
       setPaymentStatus('failed');
-      console.error('[PAYMENT ERROR]', error);
+      console.error('[MOCK PAYMENT ERROR]', error?.response?.data || error);
 
       Alert.alert(
         '❌ Payment Failed',
@@ -203,9 +172,9 @@ export default function PaymentScreen() {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.heading}>Make a Payment</Text>
+        <Text style={styles.heading}>Make a Mock Payment</Text>
         <Text style={styles.subtitle}>
-          Powered by Razorpay · UPI / GPay / PhonePe / Paytm
+          Simulated checkout for demo purposes (No real money).
         </Text>
 
         {/* Amount Input */}
@@ -261,6 +230,69 @@ export default function PaymentScreen() {
           </ScrollView>
         </View>
 
+        {/* SHG Payment Toggle */}
+        <View style={[styles.inputGroup, styles.switchContainer]}>
+          <Text style={styles.label}>Is this an SHG Payment?</Text>
+          <Switch
+            value={form.isShgPayment}
+            onValueChange={(val) => setForm(f => ({ ...f, isShgPayment: val }))}
+          />
+        </View>
+
+        {form.isShgPayment && (
+          <View style={styles.shgContainer}>
+            <Text style={styles.infoTitle}>SHG Demo Options</Text>
+            
+            <Text style={styles.label}>Select SHG Group</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={styles.categoryRow}>
+                {shgGroups.map((group) => (
+                  <TouchableOpacity
+                    key={group.id}
+                    style={[styles.categoryChip, form.shgGroupId === group.id && styles.categoryChipActive]}
+                    onPress={() => setForm((f) => ({ ...f, shgGroupId: group.id }))}
+                  >
+                    <Text style={[styles.categoryText, form.shgGroupId === group.id && styles.categoryTextActive]}>
+                      {group.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <Text style={styles.label}>Transaction Type</Text>
+            <View style={[styles.categoryRow, { marginBottom: 12 }]}>
+              {['deposit', 'loan_repayment'].map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.categoryChip, form.shgTransactionType === type && styles.categoryChipActive]}
+                  onPress={() => setForm((f) => ({ ...f, shgTransactionType: type as 'deposit' | 'loan_repayment' }))}
+                >
+                  <Text style={[styles.categoryText, form.shgTransactionType === type && styles.categoryTextActive]}>
+                    {type === 'deposit' ? 'Deposit' : 'Loan Repayment'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {form.shgTransactionType === 'loan_repayment' && (
+              <>
+                <Text style={styles.label}>Simulated Repayment Deadline</Text>
+                <TextInput
+                  style={styles.input}
+                  value={form.repaymentDeadline}
+                  onChangeText={(v) => setForm((f) => ({ ...f, repaymentDeadline: v }))}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 4, marginBottom: 8 }}>
+                  (Set to a past date to test the automated late fee penalty)
+                </Text>
+              </>
+            )}
+          </View>
+        )}
+
         {/* Pay Button */}
         <TouchableOpacity
           style={[styles.payButton, loading && styles.payButtonDisabled]}
@@ -271,40 +303,26 @@ export default function PaymentScreen() {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.payButtonText}>
-              {form.amount ? `Pay ₹${form.amount}` : 'Pay Now'}
+              {form.amount ? `Simulate Pay ₹${form.amount}` : 'Simulate Payment'}
             </Text>
           )}
         </TouchableOpacity>
 
         {/* Status indicator */}
-        {paymentStatus === 'creating' && (
-          <Text style={styles.statusText}>⏳ Creating payment order...</Text>
-        )}
         {paymentStatus === 'processing' && (
-          <Text style={styles.statusText}>⏳ Processing payment...</Text>
+          <Text style={styles.statusText}>⏳ Processing mock payment...</Text>
         )}
         {paymentStatus === 'success' && (
           <Text style={[styles.statusText, styles.statusSuccess]}>
-            ✅ Payment successful!
+            ✅ Mock Payment successful!
           </Text>
         )}
         {paymentStatus === 'failed' && (
           <Text style={[styles.statusText, styles.statusFailed]}>
-            ❌ Payment failed. Please try again.
+            ❌ Mock Payment failed. Please try again.
           </Text>
         )}
 
-        {/* Info box */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>How it works</Text>
-          <Text style={styles.infoText}>
-            1. Enter amount and tap Pay{'\n'}
-            2. Razorpay opens — choose GPay / PhonePe / Paytm{'\n'}
-            3. Amount is pre-filled{'\n'}
-            4. Enter your UPI PIN{'\n'}
-            5. Payment recorded automatically
-          </Text>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -326,6 +344,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   inputGroup: { marginBottom: 20 },
+  switchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -356,6 +379,20 @@ const styles = StyleSheet.create({
   },
   categoryText: { fontSize: 13, color: '#374151' },
   categoryTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  shgContainer: {
+    backgroundColor: '#F0FDF4',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#166534',
+    marginBottom: 12,
+  },
   payButton: {
     backgroundColor: '#16A34A',
     borderRadius: 12,
@@ -373,19 +410,4 @@ const styles = StyleSheet.create({
   },
   statusSuccess: { color: '#16A34A', fontWeight: '600' },
   statusFailed: { color: '#DC2626', fontWeight: '600' },
-  infoBox: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 10,
-    padding: 16,
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#166534',
-    marginBottom: 8,
-  },
-  infoText: { fontSize: 13, color: '#166534', lineHeight: 22 },
 });

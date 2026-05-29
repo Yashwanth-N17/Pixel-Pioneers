@@ -20,8 +20,8 @@ function MiniBarChart({ data }: { data: { m: string; v: number }[] }) {
   const max = Math.max(...data.map((d) => d.v), 1);
   return (
     <View style={{ height: 110 }} className="flex-row items-end justify-between">
-      {data.map((d) => (
-        <View key={d.m} className="flex-1 items-center">
+      {data.map((d, index) => (
+        <View key={`${d.m}-${index}`} className="flex-1 items-center">
           <View
             style={{
               width: 16,
@@ -412,6 +412,69 @@ export default function HomeScreen() {
                 </View>
                 <Text style={{ fontSize: 13, fontWeight: '900', color: '#1e293b', lineHeight: 16 }}>
                 {t.smartInsights}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Row 3 */}
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+            {/* SHG Digital Banking */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/screens/shg-banking' as any)}
+              style={{ flex: 1 }}
+            >
+              <View
+                style={{
+                  backgroundColor: '#fff', borderRadius: 14, padding: 14,
+                  flexDirection: 'row', alignItems: 'center',
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40, height: 40, borderRadius: 12,
+                    backgroundColor: `${C.emerald600}1F`,
+                    alignItems: 'center', justifyContent: 'center',
+                    marginRight: 10,
+                  }}
+                >
+                  <MaterialIcons name="groups" size={21} color={C.emerald600} />
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#1e293b', lineHeight: 16 }}>
+                  SHG Banking
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Payments */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/screens/payment')}
+              style={{ flex: 1 }}
+            >
+              <View
+                style={{
+                  backgroundColor: '#fff', borderRadius: 14, padding: 14,
+                  flexDirection: 'row', alignItems: 'center',
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40, height: 40, borderRadius: 12,
+                    backgroundColor: `${C.blue600}1F`,
+                    alignItems: 'center', justifyContent: 'center',
+                    marginRight: 10,
+                  }}
+                >
+                  <Feather name="credit-card" size={20} color={C.blue600} />
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#1e293b', lineHeight: 16 }}>
+                  Payments
                 </Text>
               </View>
             </TouchableOpacity>
