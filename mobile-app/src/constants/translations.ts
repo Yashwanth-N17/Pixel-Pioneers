@@ -220,7 +220,7 @@ const english: TranslationSet = {
   dailyWage: 'Daily Wage',
   dailyWageSub: 'Shift days, payments and work stability',
   register: 'Register',
-  alreadyHaveAccount: 'Already have an account? Login',
+  alreadyHaveAccount: 'New User? Please SignUp',
   login: 'Login',
   answerMode: 'Answer mode',
   normalInput: 'Normal input',

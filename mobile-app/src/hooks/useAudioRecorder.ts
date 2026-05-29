@@ -11,17 +11,17 @@ const NOISE_GATE_FLOOR = -42; // Any sound quieter than -42dB (AC hums, room sta
 const AUDIO_CEILING = -3;     // Any sound louder than -3dB hits maximum wave height
 const SENSIVITY_CURVE = 2.5;   // Higher = less twitchy to tiny sounds; lower = more reactive
 
+const RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  isMeteringEnabled: true,
+};
+
 export function useAudioRecorder() {
   // 1. Pass configuration into instantiation hook to register native metering intents
-  const recorder = useExpoRecorder({
-    ...RecordingPresets.HIGH_QUALITY,
-    isMeteringEnabled: true,
-  });
+  const recorder = useExpoRecorder(RECORDING_OPTIONS);
   
-  // 2. Poll native buffer state every 60ms for fluid visual updates
-  const status = useAudioRecorderState(recorder, 60); 
-  
-  const [metering, setMetering] = useState(-160);
+  // 2. Poll native buffer state every 200ms for visual updates without overwhelming React
+  const status = useAudioRecorderState(recorder, 200); 
 
   const start = async () => {
     try {
@@ -35,10 +35,7 @@ export function useAudioRecorder() {
       if (!granted) return;
 
       // 4. Re-verify configuration structure during physical hardware spin-up
-      await recorder.prepareToRecordAsync({
-        ...RecordingPresets.HIGH_QUALITY,
-        isMeteringEnabled: true,
-      });
+      await recorder.prepareToRecordAsync(RECORDING_OPTIONS);
 
       await recorder.record();
     } catch (e) {
@@ -47,7 +44,6 @@ export function useAudioRecorder() {
   };
 
   const stop = async (): Promise<string | null> => {
-    setMetering(-160);
     try {
       await recorder.stop();
       return recorder.uri ?? null;
@@ -56,17 +52,12 @@ export function useAudioRecorder() {
     }
   };
 
-  // 5. Track native module state events cleanly
-  useEffect(() => {
-    if (status?.metering !== undefined && status?.metering !== null) {
-      setMetering(status.metering);
-    }
-  }, [status?.metering, status?.isRecording]);
-
   // 6. Audio Scaling & Filtering Math Block
   let normalizedLevel = 0;
+  let currentMetering = -160;
 
-  if (status?.isRecording && status.metering !== undefined) {
+  if (status?.isRecording && status.metering !== undefined && status.metering !== null) {
+    currentMetering = status.metering;
     // Restrict raw decibel value inside our active visual spectrum window
     const clampedDb = Math.min(AUDIO_CEILING, Math.max(NOISE_GATE_FLOOR, status.metering));
     
@@ -82,7 +73,7 @@ export function useAudioRecorder() {
   return { 
     start, 
     stop, 
-    metering, 
+    metering: currentMetering, 
     normalizedLevel, 
     isRecording: status?.isRecording ?? false 
   };
