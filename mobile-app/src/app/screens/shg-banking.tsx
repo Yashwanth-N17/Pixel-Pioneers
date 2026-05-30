@@ -1045,7 +1045,10 @@ export default function ShgBankingScreen() {
                   label="Deposit / Pay"
                   color={C.emerald600}
                   icon={<Feather name="credit-card" size={19} color={C.emerald600} />}
-                  onPress={() => router.push('/screens/payment')}
+                  onPress={() => router.push({
+                    pathname: '/screens/payment',
+                    params: { isShgPayment: 'true', shgGroupId: group.id }
+                  })}
                 />
                 <QuickAction
                   label="Withdrawal Request"

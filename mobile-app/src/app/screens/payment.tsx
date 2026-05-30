@@ -12,7 +12,7 @@ import {
   Platform,
   Switch
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { endpoints } from '../../services/api';
 import { useStore } from '../../store';
 
@@ -43,6 +43,7 @@ const CATEGORIES = [
 // ── Component ──────────────────────────────────────────
 export default function PaymentScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const user = useStore((s) => s.user);
   const addTransaction = useStore((s) => s.addTransaction);
 
@@ -50,8 +51,8 @@ export default function PaymentScreen() {
     amount: '',
     description: '',
     category: 'Other',
-    isShgPayment: false,
-    shgGroupId: '',
+    isShgPayment: params.isShgPayment === 'true',
+    shgGroupId: (params.shgGroupId as string) || '',
     shgTransactionType: 'deposit',
     repaymentDeadline: '', // YYYY-MM-DD
   });

@@ -207,7 +207,6 @@ const getGroupByInvite = async (inviteCode) => {
       maxMembers: true,
       earlyExitFine: true,
       createdAt: true,
-      description: true,
       _count: {
         select: { members: { where: { status: "active" } } }
       }
