@@ -699,81 +699,47 @@ const voteOnProposal = async (userId, proposalId, vote) => {
       throw makeError("Voting deadline has passed for this proposal.", 400);
     }
 
-    const savedVote = await tx.shgVote.upsert({
-      where: { proposalId_userId: { proposalId, userId } },
-      update: { vote },
-      create: { proposalId, userId, vote },
-    });
-
-    await logAudit(tx, proposal.groupId, userId, "proposal_vote_cast", {
-      proposalId,
-      vote,
-    });
-
-    const [memberCount, votes] = await Promise.all([
-      tx.shgMember.count({ where: { groupId: proposal.groupId } }),
-      tx.shgVote.findMany({ where: { proposalId } }),
-    ]);
-
-    let updatedProposal = proposal;
-    if (votes.length >= memberCount) {
-      const yesVotes = votes.filter((item) => item.vote === "yes").length;
-      const noVotes = votes.length - yesVotes;
-      const status = yesVotes > noVotes ? "passed" : "rejected";
-
-      updatedProposal = await tx.shgProposal.update({
-        where: { id: proposalId },
-        data: { status },
-      });
-      await logAudit(tx, proposal.groupId, userId, "proposal_result", {
-        proposalId,
-        yesVotes,
-        noVotes,
-        status,
-      });
-
-      const memberIds = await getGroupUserIds(tx, proposal.groupId);
-      await notifyUsers(
-        tx,
-        proposal.groupId,
-        memberIds,
-        `SHG proposal "${proposal.title}" ${status}.`
-      );
+    const existingVote = proposal.votes.find((v) => v.userId === userId);
+    if (existingVote) {
+      throw makeError("You have already voted on this proposal.", 409);
     }
 
-    return { proposal: updatedProposal, vote: savedVote, voteCount: votes.length };
+    return tx.shgVote.create({
+      data: {
+        proposalId,
+        userId,
+        vote,
+      },
+    });
   });
 };
 
-const getNotifications = async (userId, groupId) => {
-  await requireMember(prisma, groupId, userId);
+const removeMember = async (actorId, groupId, targetUserId) => {
+  return prisma.$transaction(async (tx) => {
+    const actorMembership = await requireMember(tx, groupId, actorId);
+    if (!ADMIN_ROLES.has(actorMembership.role)) {
+      throw makeError("Only group office bearers can remove members.", 403);
+    }
 
-  return prisma.shgNotification.findMany({
-    where: { groupId, userId },
-    orderBy: { createdAt: "desc" },
-  });
-};
+    const targetMember = await tx.shgMember.findUnique({
+      where: { groupId_userId: { groupId, userId: targetUserId } },
+    });
 
-const markNotificationRead = async (userId, notificationId) => {
-  const notification = await prisma.shgNotification.findFirst({
-    where: { id: notificationId, userId },
-  });
+    if (!targetMember) {
+      throw makeError("The target user is not a member of this group.", 404);
+    }
 
-  if (!notification) throw makeError("SHG notification not found.", 404);
+    await tx.shgMember.delete({
+      where: { id: targetMember.id },
+    });
 
-  return prisma.shgNotification.update({
-    where: { id: notificationId },
-    data: { readStatus: true },
-  });
-};
+    await logAudit(tx, groupId, actorId, "member_removed", {
+      removedUserId: targetUserId,
+    });
 
-const getAuditLogs = async (userId, groupId) => {
-  await requireMember(prisma, groupId, userId);
+    await notifyUsers(tx, groupId, [targetUserId], "You have been removed from the SHG group.");
 
-  return prisma.shgAuditLog.findMany({
-    where: { groupId },
-    include: { actor: { select: { id: true, name: true, phone: true } } },
-    orderBy: { createdAt: "desc" },
+    return { success: true, message: "Member removed successfully." };
   });
 };
 
@@ -781,12 +747,10 @@ module.exports = {
   createGroup,
   getMyGroups,
   joinGroup,
-  approveJoinRequest,
-  rejectJoinRequest,
-  getJoinRequests,
   getDashboard,
+  getMembers,
   addMember,
-  removeMember,
+  joinGroup,
   leaveGroup,
   getTransactions,
   createTransaction,
@@ -796,7 +760,5 @@ module.exports = {
   getProposals,
   createProposal,
   voteOnProposal,
-  getNotifications,
-  markNotificationRead,
-  getAuditLogs,
+  removeMember,
 };
