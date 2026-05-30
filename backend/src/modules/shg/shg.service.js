@@ -267,27 +267,10 @@ const joinGroup = async (userId, inviteCode) => {
 
     return group;
   });
-const getJoinRequests = async (adminId, groupId) => {
-  const adminMember = await prisma.shgMember.findUnique({
-    where: { groupId_userId: { groupId, userId: adminId } },
-  });
-
-  if (!adminMember || adminMember.role !== "admin") {
-    throw makeError("Only group admins can view join requests.", 403);
-  }
-
-  return prisma.shgMember.findMany({
-    where: { groupId, status: "pending" },
-    include: {
-      user: {
-        select: { id: true, name: true, phone: true }
-      }
-    },
-    orderBy: { joinedAt: "asc" },
-  });
 };
 
-const approveJoinRequest = async (adminId, groupId, targetUserId) => {
+
+const approveJoinRequest = async (adminId, groupId, memberId) => {
   return prisma.$transaction(async (tx) => {
     const adminMember = await tx.shgMember.findUnique({
       where: { groupId_userId: { groupId, userId: adminId } },
@@ -298,10 +281,10 @@ const approveJoinRequest = async (adminId, groupId, targetUserId) => {
     }
 
     const targetMember = await tx.shgMember.findUnique({
-      where: { groupId_userId: { groupId, userId: targetUserId } },
+      where: { id: memberId },
     });
 
-    if (!targetMember || targetMember.status !== "pending") {
+    if (!targetMember || targetMember.groupId !== groupId || targetMember.status !== "pending") {
       throw makeError("Join request not found or already processed.", 404);
     }
 
@@ -319,13 +302,15 @@ const approveJoinRequest = async (adminId, groupId, targetUserId) => {
       data: { status: "active" },
     });
 
-    await notifyUsers(tx, groupId, [targetUserId], "Your request to join the SHG group has been approved.");
-    
+    await logAudit(tx, groupId, adminId, "join_request_approved", {
+      approvedUserId: targetMember.userId,
+    });
+
     return updatedMember;
   });
 };
 
-const rejectJoinRequest = async (adminId, groupId, targetUserId) => {
+const rejectJoinRequest = async (adminId, groupId, memberId) => {
   return prisma.$transaction(async (tx) => {
     const adminMember = await tx.shgMember.findUnique({
       where: { groupId_userId: { groupId, userId: adminId } },
@@ -336,10 +321,10 @@ const rejectJoinRequest = async (adminId, groupId, targetUserId) => {
     }
 
     const targetMember = await tx.shgMember.findUnique({
-      where: { groupId_userId: { groupId, userId: targetUserId } },
+      where: { id: memberId },
     });
 
-    if (!targetMember || targetMember.status !== "pending") {
+    if (!targetMember || targetMember.groupId !== groupId || targetMember.status !== "pending") {
       throw makeError("Join request not found or already processed.", 404);
     }
 
@@ -347,7 +332,9 @@ const rejectJoinRequest = async (adminId, groupId, targetUserId) => {
       where: { id: targetMember.id },
     });
 
-    await notifyUsers(tx, groupId, [targetUserId], "Your request to join the SHG group was rejected.");
+    await logAudit(tx, groupId, adminId, "join_request_rejected", {
+      rejectedUserId: targetMember.userId,
+    });
 
     return { message: "Join request rejected successfully." };
   });

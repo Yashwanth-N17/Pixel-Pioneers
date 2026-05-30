@@ -1300,13 +1300,13 @@ export default function ShgBankingScreen() {
                             </View>
                             <View style={{ flexDirection: 'row', gap: 10 }}>
                               <TouchableOpacity
-                                onPress={() => approveJoin(req.user.id)}
+                                onPress={() => approveJoin(req.id)}
                                 style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
                               >
                                 <Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>Approve</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
-                                onPress={() => rejectJoin(req.user.id)}
+                                onPress={() => rejectJoin(req.id)}
                                 style={{ flex: 1, backgroundColor: '#FFF1F2', borderWidth: 1, borderColor: '#FECDD3', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
                               >
                                 <Text style={{ color: C.rose600, fontWeight: '900', fontSize: 13 }}>Reject</Text>
