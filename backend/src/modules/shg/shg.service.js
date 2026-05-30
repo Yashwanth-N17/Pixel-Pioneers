@@ -267,6 +267,24 @@ const joinGroup = async (userId, inviteCode) => {
 
     return group;
   });
+const getJoinRequests = async (adminId, groupId) => {
+  const adminMember = await prisma.shgMember.findUnique({
+    where: { groupId_userId: { groupId, userId: adminId } },
+  });
+
+  if (!adminMember || adminMember.role !== "admin") {
+    throw makeError("Only group admins can view join requests.", 403);
+  }
+
+  return prisma.shgMember.findMany({
+    where: { groupId, status: "pending" },
+    include: {
+      user: {
+        select: { id: true, name: true, phone: true }
+      }
+    },
+    orderBy: { joinedAt: "asc" },
+  });
 };
 
 const approveJoinRequest = async (adminId, groupId, targetUserId) => {
@@ -784,4 +802,5 @@ module.exports = {
   createProposal,
   voteOnProposal,
   removeMember,
+  getJoinRequests,
 };

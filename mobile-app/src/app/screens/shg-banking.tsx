@@ -1277,10 +1277,45 @@ export default function ShgBankingScreen() {
               {/* ── Approvals Tab ── */}
               {activeTab === 'approvals' && (
                 <>
-                  {approvals.filter((a) => a.status === 'pending').length === 0 && (
+                  {approvals.filter((a) => a.status === 'pending').length === 0 && pendingRequests.length === 0 && (
                     <Card>
                       <Text style={{ color: C.slate500, textAlign: 'center', fontWeight: '700' }}>No pending approvals.</Text>
                     </Card>
+                  )}
+                  
+                  {group.currentUserRole === 'admin' && pendingRequests.length > 0 && (
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={{ color: C.slate500, fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
+                        {pendingRequests.length} PENDING JOIN REQUEST{pendingRequests.length !== 1 ? 'S' : ''}
+                      </Text>
+                      {pendingRequests.map((req) => {
+                        const displayName = req.user?.name || req.name || req.user?.phone || 'Unknown User';
+                        return (
+                          <Card key={req.id}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <View>
+                                <Text style={{ color: C.slate900, fontWeight: '900' }}>{displayName}</Text>
+                                <Text style={{ color: C.slate500, fontSize: 12 }}>Requested to join</Text>
+                              </View>
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                              <TouchableOpacity
+                                onPress={() => approveJoin(req.user.id)}
+                                style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
+                              >
+                                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>Approve</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => rejectJoin(req.user.id)}
+                                style={{ flex: 1, backgroundColor: '#FFF1F2', borderWidth: 1, borderColor: '#FECDD3', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
+                              >
+                                <Text style={{ color: C.rose600, fontWeight: '900', fontSize: 13 }}>Reject</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </Card>
+                        );
+                      })}
+                    </View>
                   )}
                   {approvals.filter((a) => a.status === 'pending').map((approval) => (
                     <Card key={approval.id}>
@@ -1371,41 +1406,6 @@ export default function ShgBankingScreen() {
               {/* ── Members Tab — visible to everyone ── */}
               {activeTab === 'members' && (
                 <>
-                  {group.currentUserRole === 'admin' && pendingRequests.length > 0 && (
-                    <View style={{ marginBottom: 20 }}>
-                      <Text style={{ color: C.slate500, fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
-                        {pendingRequests.length} PENDING JOIN REQUEST{pendingRequests.length !== 1 ? 'S' : ''}
-                      </Text>
-                      {pendingRequests.map((req) => {
-                        const displayName = req.user?.name || req.name || req.user?.phone || 'Unknown User';
-                        return (
-                          <Card key={req.id}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                              <View>
-                                <Text style={{ color: C.slate900, fontWeight: '900' }}>{displayName}</Text>
-                                <Text style={{ color: C.slate500, fontSize: 12 }}>Requested to join</Text>
-                              </View>
-                            </View>
-                            <View style={{ flexDirection: 'row', gap: 10 }}>
-                              <TouchableOpacity
-                                onPress={() => approveJoin(req.user.id)}
-                                style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
-                              >
-                                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>Approve</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => rejectJoin(req.user.id)}
-                                style={{ flex: 1, backgroundColor: '#FFF1F2', borderWidth: 1, borderColor: '#FECDD3', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
-                              >
-                                <Text style={{ color: C.rose600, fontWeight: '900', fontSize: 13 }}>Reject</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </Card>
-                        );
-                      })}
-                    </View>
-                  )}
-
                   <Text style={{ color: C.slate500, fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
                     {members.length} MEMBER{members.length !== 1 ? 'S' : ''} IN THIS GROUP
                   </Text>
