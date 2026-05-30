@@ -27,6 +27,12 @@ const createGroupValidation = [
     .withMessage("Group name is required.")
     .isLength({ max: 120 })
     .withMessage("Group name must be 120 characters or fewer."),
+  body("maxMembers")
+    .isInt({ min: 2, max: 100 })
+    .withMessage("maxMembers must be between 2 and 100."),
+  body("earlyExitFine")
+    .isFloat({ min: 0 })
+    .withMessage("earlyExitFine must be a positive number."),
 ];
 
 const joinGroupValidation = [

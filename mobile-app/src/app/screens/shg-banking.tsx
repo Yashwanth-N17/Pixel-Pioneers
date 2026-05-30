@@ -425,6 +425,8 @@ export default function ShgBankingScreen() {
 
   // Create / Join form state
   const [groupName, setGroupName] = useState('');
+  const [maxMembers, setMaxMembers] = useState('10');
+  const [earlyExitFine, setEarlyExitFine] = useState('500');
   const [inviteCode, setInviteCode] = useState('');
 
   // Withdrawal form
@@ -517,7 +519,12 @@ export default function ShgBankingScreen() {
       return;
     }
     try {
-      const res = await endpoints.createShgGroup({ name: groupName.trim() });
+      const payload = {
+        name: groupName.trim(),
+        maxMembers: parseInt(maxMembers) || 10,
+        earlyExitFine: parseFloat(earlyExitFine) || 0,
+      };
+      const res = await endpoints.createShgGroup(payload);
       const created = res.data?.data;
       setGroup(created);
       setGroupName('');
@@ -537,8 +544,8 @@ export default function ShgBankingScreen() {
     try {
       await endpoints.joinShgGroup({ inviteCode: inviteCode.trim().toUpperCase() });
       setInviteCode('');
-      Alert.alert('✅ Joined!', 'You are now a member of the SHG group.');
-      await loadShg();
+      Alert.alert('✅ Request Sent!', 'Your request to join has been sent to the admin for approval.');
+      // Don't reload immediately because they might not have access yet.
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.message || 'Invalid invite code. Please try again.');
     }
@@ -735,12 +742,31 @@ export default function ShgBankingScreen() {
                     <Text style={{ color: C.slate500, fontSize: 12 }}>You become the group admin</Text>
                   </View>
                 </View>
+                <Text style={{ color: C.slate500, fontSize: 12, marginBottom: 4, marginLeft: 4 }}>Group Name</Text>
                 <TextInput
                   value={groupName}
                   onChangeText={setGroupName}
                   placeholder="e.g. Sri Lakshmi Women SHG"
                   placeholderTextColor={C.slate400}
                   style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12 }}
+                />
+                <Text style={{ color: C.slate500, fontSize: 12, marginBottom: 4, marginLeft: 4 }}>Number of Members (Dictates Term length in months)</Text>
+                <TextInput
+                  value={maxMembers}
+                  onChangeText={setMaxMembers}
+                  placeholder="e.g. 10"
+                  keyboardType="numeric"
+                  placeholderTextColor={C.slate400}
+                  style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12 }}
+                />
+                <Text style={{ color: C.slate500, fontSize: 12, marginBottom: 4, marginLeft: 4 }}>Early Exit Fine (₹)</Text>
+                <TextInput
+                  value={earlyExitFine}
+                  onChangeText={setEarlyExitFine}
+                  placeholder="e.g. 500"
+                  keyboardType="numeric"
+                  placeholderTextColor={C.slate400}
+                  style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 16 }}
                 />
                 <TouchableOpacity onPress={createGroup} style={{ backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                   <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Create Group</Text>

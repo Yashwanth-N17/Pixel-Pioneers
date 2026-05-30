@@ -205,12 +205,23 @@ export const endpoints = {
   createShgGroup: (body: {
     name: string;
     approvalThreshold?: number;
+    maxMembers?: number;
+    earlyExitFine?: number;
   }) => api.post('/shg/groups', body),
 
   joinShgGroup: (body: {
     groupId?: string;
     inviteCode?: string;
   }) => api.post('/shg/groups/join', body),
+
+  getShgJoinRequests: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/join-requests`),
+
+  approveShgJoinRequest: (groupId: string, memberId: string) =>
+    api.post(`/shg/groups/${groupId}/join-requests/${memberId}/approve`),
+
+  rejectShgJoinRequest: (groupId: string, memberId: string) =>
+    api.post(`/shg/groups/${groupId}/join-requests/${memberId}/reject`),
 
   leaveShgGroup: (groupId: string) => 
     api.post(`/shg/groups/${groupId}/leave`),
