@@ -212,6 +212,9 @@ export const endpoints = {
     inviteCode?: string;
   }) => api.post('/shg/groups/join', body),
 
+  leaveShgGroup: (groupId: string) => 
+    api.post(`/shg/groups/${groupId}/leave`),
+
   getMyShgGroups: () => api.get('/shg/groups/my'),
 
   getShgDashboard: (groupId: string) =>

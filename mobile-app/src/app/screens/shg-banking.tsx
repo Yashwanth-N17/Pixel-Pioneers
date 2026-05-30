@@ -7,6 +7,7 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -16,7 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import QRCode from 'react-native-qrcode-svg';
+import { Svg, Rect } from 'react-native-svg';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import qrcode from 'qrcode-generator';
 
 import { C } from '../../constants/colors';
 import { endpoints } from '../../services/api';
@@ -148,7 +151,164 @@ function QuickAction({ icon, label, color, onPress }: { icon: React.ReactNode; l
   );
 }
 
-// QR Code Modal
+// ─────────────────────────────────────────
+// Pure-JS QR Code renderer using react-native-svg
+// ─────────────────────────────────────────
+function QRCodeSVG({ value, size = 200 }: { value: string; size?: number }) {
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(value);
+    qr.make();
+    const count = qr.getModuleCount();
+    const cellSize = size / count;
+    const cells: React.ReactNode[] = [];
+    for (let row = 0; row < count; row++) {
+      for (let col = 0; col < count; col++) {
+        if (qr.isDark(row, col)) {
+          cells.push(
+            <Rect
+              key={`${row}-${col}`}
+              x={col * cellSize}
+              y={row * cellSize}
+              width={cellSize}
+              height={cellSize}
+              fill="#1e293b"
+            />
+          );
+        }
+      }
+    }
+    return (
+      <Svg width={size} height={size} backgroundColor="#fff">
+        {cells}
+      </Svg>
+    );
+  } catch {
+    return <View style={{ width: size, height: size, backgroundColor: '#f1f5f9', borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ color: C.slate400, fontSize: 12 }}>QR unavailable</Text>
+    </View>;
+  }
+}
+
+// ─────────────────────────────────────────
+// QR Scanner Modal
+// ─────────────────────────────────────────
+function QRScannerModal({ visible, onScanned, onClose }: {
+  visible: boolean;
+  onScanned: (code: string) => void;
+  onClose: () => void;
+}) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
+
+  useEffect(() => {
+    if (visible) setScanned(false);
+  }, [visible]);
+
+  // Permission still loading — wait silently
+  if (permission === null) {
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={C.emerald600} size="large" />
+          <Text style={{ color: '#fff', marginTop: 12, fontWeight: '700' }}>Checking camera permission...</Text>
+        </View>
+      </Modal>
+    );
+  }
+
+  // Permission denied or not yet granted
+  if (!permission.granted) {
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <View style={{ width: 80, height: 80, borderRadius: 24, backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+            <Ionicons name="camera-outline" size={40} color={C.emerald400} />
+          </View>
+          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center' }}>Camera Access Needed</Text>
+          <Text style={{ color: '#94a3b8', fontSize: 14, marginTop: 10, textAlign: 'center', lineHeight: 22 }}>
+            Allow camera access to scan the SHG QR code and join the group instantly.
+          </Text>
+          <TouchableOpacity
+            onPress={requestPermission}
+            style={{ marginTop: 28, backgroundColor: C.emerald600, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 36 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Allow Camera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onClose} style={{ marginTop: 16 }}>
+            <Text style={{ color: '#64748b', fontWeight: '700' }}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    );
+  }
+
+  // Camera ready — full screen camera with overlay
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1 }}>
+        {/* Camera fills the entire modal */}
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={scanned ? undefined : ({ data }) => {
+            setScanned(true);
+            onScanned(data);
+          }}
+        />
+
+        {/* Dark top bar */}
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          height: 100, backgroundColor: 'rgba(0,0,0,0.6)',
+          paddingTop: 52, paddingHorizontal: 20,
+          flexDirection: 'row', alignItems: 'center',
+        }}>
+          <TouchableOpacity onPress={onClose} style={{ marginRight: 16 }}>
+            <Feather name="x" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={{ color: '#fff', fontWeight: '900', fontSize: 17 }}>Scan QR Code</Text>
+        </View>
+
+        {/* Center viewfinder */}
+        <View style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          {/* Corner brackets */}
+          <View style={{ width: 250, height: 250, position: 'relative' }}>
+            {/* Top-left */}
+            <View style={{ position: 'absolute', top: 0, left: 0, width: 40, height: 40, borderTopWidth: 4, borderLeftWidth: 4, borderColor: C.emerald400, borderTopLeftRadius: 8 }} />
+            {/* Top-right */}
+            <View style={{ position: 'absolute', top: 0, right: 0, width: 40, height: 40, borderTopWidth: 4, borderRightWidth: 4, borderColor: C.emerald400, borderTopRightRadius: 8 }} />
+            {/* Bottom-left */}
+            <View style={{ position: 'absolute', bottom: 0, left: 0, width: 40, height: 40, borderBottomWidth: 4, borderLeftWidth: 4, borderColor: C.emerald400, borderBottomLeftRadius: 8 }} />
+            {/* Bottom-right */}
+            <View style={{ position: 'absolute', bottom: 0, right: 0, width: 40, height: 40, borderBottomWidth: 4, borderRightWidth: 4, borderColor: C.emerald400, borderBottomRightRadius: 8 }} />
+          </View>
+          <Text style={{ color: '#fff', fontWeight: '700', marginTop: 24, fontSize: 14, textAlign: 'center', textShadowColor: '#000', textShadowRadius: 6 }}>
+            Point at the admin's SHG QR code
+          </Text>
+        </View>
+
+        {/* Dark bottom bar */}
+        <View style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          height: 100, backgroundColor: 'rgba(0,0,0,0.6)',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Text style={{ color: '#64748b', fontSize: 13 }}>QR code will be detected automatically</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+
+// ─────────────────────────────────────────
+// QR Display Modal
+// ─────────────────────────────────────────
 function QRModal({ visible, inviteCode, groupName, onClose }: {
   visible: boolean;
   inviteCode: string;
@@ -208,12 +368,7 @@ function QRModal({ visible, inviteCode, groupName, onClose }: {
                 shadowRadius: 12,
                 elevation: 8,
               }}>
-                <QRCode
-                  value={inviteCode}
-                  size={180}
-                  color={C.slate900}
-                  backgroundColor="#fff"
-                />
+                <QRCodeSVG value={inviteCode} size={180} />
               </View>
             </Animated.View>
 
@@ -284,6 +439,8 @@ export default function ShgBankingScreen() {
 
   // QR modal
   const [showQR, setShowQR] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [joinMethod, setJoinMethod] = useState<'code' | 'qr'>('code');
 
   const pendingApprovals = useMemo(
     () => approvals.filter((a) => a.status === 'pending').length,
@@ -387,6 +544,30 @@ export default function ShgBankingScreen() {
     }
   };
 
+  const leaveGroup = async () => {
+    if (!group) return;
+    Alert.alert(
+      'Leave Group',
+      'Are you sure you want to leave this SHG group?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await endpoints.leaveShgGroup(group.id);
+              Alert.alert('Success', 'You have left the SHG group.');
+              await loadShg();
+            } catch (error: any) {
+              Alert.alert('Error', error?.response?.data?.message || 'Could not leave group.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const approveTransaction = async (transactionId: string) => {
     try {
       await endpoints.approveShgTransaction(transactionId);
@@ -487,7 +668,7 @@ export default function ShgBankingScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.slate50 }} edges={['top']}>
 
-      {/* QR Modal */}
+      {/* QR Display Modal */}
       {group?.inviteCode && (
         <QRModal
           visible={showQR}
@@ -496,6 +677,28 @@ export default function ShgBankingScreen() {
           onClose={() => setShowQR(false)}
         />
       )}
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScanned={(scannedCode) => {
+          setShowScanner(false);
+          setInviteCode(scannedCode.toUpperCase());
+          // Auto-join after scan
+          setTimeout(() => {
+            endpoints.joinShgGroup({ inviteCode: scannedCode.toUpperCase() })
+              .then(() => {
+                setInviteCode('');
+                Alert.alert('✅ Joined!', 'You are now a member of the SHG group.');
+                loadShg();
+              })
+              .catch((err: any) => {
+                Alert.alert('Error', err?.response?.data?.message || 'Invalid QR code.');
+              });
+          }, 300);
+        }}
+      />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -545,27 +748,66 @@ export default function ShgBankingScreen() {
               </Card>
 
               <Card>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
                   <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#F0F9FF', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
                     <Ionicons name="qr-code" size={20} color={C.blue600} />
                   </View>
                   <View>
                     <Text style={{ color: C.slate900, fontSize: 16, fontWeight: '900' }}>Join Existing SHG</Text>
-                    <Text style={{ color: C.slate500, fontSize: 12 }}>Enter the 6-letter invite code</Text>
+                    <Text style={{ color: C.slate500, fontSize: 12 }}>Use invite code or scan QR</Text>
                   </View>
                 </View>
-                <TextInput
-                  value={inviteCode}
-                  onChangeText={setInviteCode}
-                  placeholder="e.g. SRI847"
-                  placeholderTextColor={C.slate400}
-                  autoCapitalize="characters"
-                  maxLength={10}
-                  style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12, fontWeight: '900', fontSize: 18, letterSpacing: 4, textAlign: 'center' }}
-                />
-                <TouchableOpacity onPress={joinGroup} style={{ backgroundColor: C.slate900, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
-                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Join Group</Text>
-                </TouchableOpacity>
+
+                {/* Tab switcher */}
+                <View style={{ flexDirection: 'row', backgroundColor: C.slate100, borderRadius: 10, padding: 3, marginBottom: 14 }}>
+                  <TouchableOpacity
+                    onPress={() => setJoinMethod('code')}
+                    style={{
+                      flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center',
+                      backgroundColor: joinMethod === 'code' ? '#fff' : 'transparent',
+                    }}
+                  >
+                    <Text style={{ fontWeight: '900', fontSize: 13, color: joinMethod === 'code' ? C.slate900 : C.slate500 }}>Enter Code</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setJoinMethod('qr')}
+                    style={{
+                      flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center',
+                      backgroundColor: joinMethod === 'qr' ? '#fff' : 'transparent',
+                    }}
+                  >
+                    <Text style={{ fontWeight: '900', fontSize: 13, color: joinMethod === 'qr' ? C.slate900 : C.slate500 }}>Scan QR</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {joinMethod === 'code' ? (
+                  <>
+                    <TextInput
+                      value={inviteCode}
+                      onChangeText={setInviteCode}
+                      placeholder="e.g. SRI847"
+                      placeholderTextColor={C.slate400}
+                      autoCapitalize="characters"
+                      maxLength={10}
+                      style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: C.slate900, marginBottom: 12, fontWeight: '900', fontSize: 22, letterSpacing: 6, textAlign: 'center' }}
+                    />
+                    <TouchableOpacity onPress={joinGroup} style={{ backgroundColor: C.slate900, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Join Group</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setShowScanner(true)}
+                    style={{
+                      backgroundColor: C.slate900, borderRadius: 12, paddingVertical: 20,
+                      alignItems: 'center', gap: 8,
+                    }}
+                  >
+                    <Ionicons name="qr-code-outline" size={32} color="#fff" />
+                    <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Open Camera Scanner</Text>
+                    <Text style={{ color: '#94a3b8', fontSize: 12 }}>Point at admin's QR code</Text>
+                  </TouchableOpacity>
+                )}
               </Card>
             </>
           ) : (
@@ -617,6 +859,25 @@ export default function ShgBankingScreen() {
                     <Feather name="share-2" size={16} color={C.emerald600} />
                   </TouchableOpacity>
                 )}
+
+                <TouchableOpacity 
+                  onPress={leaveGroup}
+                  style={{
+                    marginTop: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#FEF2F2',
+                    borderRadius: 10,
+                    padding: 10,
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                    gap: 6
+                  }}
+                >
+                  <Ionicons name="exit-outline" size={16} color="#DC2626" />
+                  <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '700' }}>Leave Group</Text>
+                </TouchableOpacity>
               </Card>
 
               {/* Quick Actions */}

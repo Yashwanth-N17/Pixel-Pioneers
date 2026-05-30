@@ -58,7 +58,6 @@ const getApprovalUserIds = async (client, groupId, creatorId) => {
     where: {
       groupId,
       userId: { not: creatorId },
-      role: { in: ["treasurer", "president", "admin"] },
     },
     select: { userId: true },
   });
@@ -241,6 +240,29 @@ const joinGroup = async (userId, inviteCode) => {
   return getDashboard(userId, group.id);
 };
 
+const leaveGroup = async (userId, groupId) => {
+  return prisma.$transaction(async (tx) => {
+    const member = await requireMember(tx, groupId, userId);
+
+    // If admin, we should perhaps assign admin to someone else or handle differently,
+    // but for now, just delete the member record.
+    await tx.shgMember.delete({
+      where: { id: member.id },
+    });
+
+    await logAudit(tx, groupId, userId, "member_left", {
+      memberId: member.id,
+      userId,
+    });
+
+    // Notify others
+    const remainingMembers = await getGroupUserIds(tx, groupId);
+    await notifyUsers(tx, groupId, remainingMembers, `A member has left the SHG group.`);
+
+    return { success: true, message: "Successfully left the group." };
+  });
+};
+
 const getTransactions = async (userId, groupId) => {
   await requireMember(prisma, groupId, userId);
 
@@ -262,8 +284,8 @@ const createTransaction = async (userId, groupId, payload) => {
     const type = payload.type;
     const amount = Number(payload.amount);
 
-    if (type === "withdrawal" && !WITHDRAWAL_ROLES.has(member.role)) {
-      throw makeError("Only treasurer, president, or admin can create withdrawal requests.", 403);
+    if (type === "withdrawal") {
+      // Any member can create withdrawal requests, no role restriction anymore
     }
 
     const immediateApproval = type !== "withdrawal";
@@ -338,9 +360,6 @@ const approveTransaction = async (userId, transactionId, remarks) => {
 
     if (transaction.createdById === userId) {
       throw makeError("Approver cannot approve their own transaction.", 403);
-    }
-    if (!ADMIN_ROLES.has(member.role)) {
-      throw makeError("Only group office bearers can approve withdrawals.", 403);
     }
     if (transaction.status !== "pending") {
       throw makeError("Only pending transactions can be approved.", 400);
@@ -418,9 +437,6 @@ const rejectTransaction = async (userId, transactionId, remarks) => {
 
     if (transaction.createdById === userId) {
       throw makeError("Approver cannot reject their own transaction.", 403);
-    }
-    if (!ADMIN_ROLES.has(member.role)) {
-      throw makeError("Only group office bearers can reject withdrawals.", 403);
     }
     if (transaction.status !== "pending") {
       throw makeError("Only pending transactions can be rejected.", 400);
@@ -600,8 +616,9 @@ module.exports = {
   getMyGroups,
   joinGroup,
   getDashboard,
-  getMembers,
   addMember,
+  removeMember,
+  leaveGroup,
   getTransactions,
   createTransaction,
   getApprovals,

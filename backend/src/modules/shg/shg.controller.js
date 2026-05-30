@@ -22,7 +22,16 @@ const getMyGroups = async (req, res, next) => {
 const joinGroup = async (req, res, next) => {
   try {
     const dashboard = await shgService.joinGroup(req.user.id, req.body.inviteCode);
-    return sendSuccess(res, "Joined SHG group successfully.", dashboard, 201);
+    return sendSuccess(res, "Successfully joined SHG group.", dashboard, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const leaveGroup = async (req, res, next) => {
+  try {
+    const result = await shgService.leaveGroup(req.user.id, req.params.groupId);
+    return sendSuccess(res, "Successfully left SHG group.", result, 200);
   } catch (error) {
     next(error);
   }
@@ -177,6 +186,7 @@ module.exports = {
   createGroup,
   getMyGroups,
   joinGroup,
+  leaveGroup,
   getDashboard,
   getMembers,
   addMember,
