@@ -87,6 +87,18 @@ export default function InsightsScreen() {
           );
         })}
 
+        <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/screens/smart-insights')} style={{ marginTop: 18 }}>
+          <View style={{ backgroundColor: C.blue600, borderRadius: 16, padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16, marginBottom: 4 }}>SMS Scam Guard</Text>
+            <Text style={{ color: '#eff6ff', fontSize: 12, textAlign: 'center', lineHeight: 18 }}>
+              Protect yourself from phishing, fake lotteries, and malicious links. We use AI to scan your text messages and flag potential threats.
+            </Text>
+            <View style={{ marginTop: 12, backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 18, paddingVertical: 8 }}>
+              <Text style={{ color: C.blue600, fontWeight: 'bold', fontSize: 13 }}>Scan Recent SMS</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
         <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/screens/voice')} style={{ marginTop: 18, marginBottom: 18 }}>
           <View style={{ backgroundColor: C.emerald600, borderRadius: 16, padding: 20, alignItems: 'center' }}>
             <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16, marginBottom: 4 }}>{t.wantDeeperFinancialAnalysis}</Text>

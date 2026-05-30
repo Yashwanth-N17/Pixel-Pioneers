@@ -277,6 +277,9 @@ export const endpoints = {
     api.get(`/shg/groups/${groupId}/audit-logs`),
 
   // ── AI ──────────────────────────────────
+  analyzeSms: (messages: any[]) =>
+    voiceApi.post('/ai-analysis/analyze-sms', { messages }),
+
   financialGuidance: (query: string, language: string) =>
     api.post('/ai/financial-guidance', { query, language }),
 

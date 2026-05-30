@@ -422,6 +422,7 @@ export default function ShgBankingScreen() {
   const [approvals, setApprovals] = useState<ShgApproval[]>([]);
   const [proposals, setProposals] = useState<ShgProposal[]>([]);
   const [members, setMembers] = useState<ShgMember[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
   // Create / Join form state
   const [groupName, setGroupName] = useState('');
@@ -473,6 +474,15 @@ export default function ShgBankingScreen() {
         endpoints.getShgMembers(selectedGroup.id),
       ]);
 
+      let joinReqRes: any = { data: { data: [] } };
+      if (selectedGroup.currentUserRole === 'admin') {
+        try {
+          joinReqRes = await endpoints.getShgJoinRequests(selectedGroup.id);
+        } catch (e) {
+          // ignore
+        }
+      }
+
       const dashboard = dashboardRes.data?.data || {};
       setGroup({
         ...selectedGroup,
@@ -497,6 +507,7 @@ export default function ShgBankingScreen() {
 
       setProposals(proposalsRes.data?.data || []);
       setMembers(membersRes.data?.data || []);
+      setPendingRequests(joinReqRes.data?.data || []);
     } catch (error) {
       console.warn('Failed to load SHG data:', error);
     } finally {
@@ -548,6 +559,28 @@ export default function ShgBankingScreen() {
       // Don't reload immediately because they might not have access yet.
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.message || 'Invalid invite code. Please try again.');
+    }
+  };
+
+  const approveJoin = async (memberId: string) => {
+    if (!group) return;
+    try {
+      await endpoints.approveShgJoinRequest(group.id, memberId);
+      Alert.alert('Approved', 'Member has been approved.');
+      await loadShg();
+    } catch (e: any) {
+      Alert.alert('Error', e?.response?.data?.message || 'Could not approve request.');
+    }
+  };
+
+  const rejectJoin = async (memberId: string) => {
+    if (!group) return;
+    try {
+      await endpoints.rejectShgJoinRequest(group.id, memberId);
+      Alert.alert('Rejected', 'Member request has been rejected.');
+      await loadShg();
+    } catch (e: any) {
+      Alert.alert('Error', e?.response?.data?.message || 'Could not reject request.');
     }
   };
 
@@ -1206,6 +1239,41 @@ export default function ShgBankingScreen() {
               {/* ── Members Tab — visible to everyone ── */}
               {activeTab === 'members' && (
                 <>
+                  {group.currentUserRole === 'admin' && pendingRequests.length > 0 && (
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={{ color: C.slate500, fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
+                        {pendingRequests.length} PENDING JOIN REQUEST{pendingRequests.length !== 1 ? 'S' : ''}
+                      </Text>
+                      {pendingRequests.map((req) => {
+                        const displayName = req.user?.name || req.name || req.user?.phone || 'Unknown User';
+                        return (
+                          <Card key={req.id}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <View>
+                                <Text style={{ color: C.slate900, fontWeight: '900' }}>{displayName}</Text>
+                                <Text style={{ color: C.slate500, fontSize: 12 }}>Requested to join</Text>
+                              </View>
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                              <TouchableOpacity
+                                onPress={() => approveJoin(req.user.id)}
+                                style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
+                              >
+                                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>Approve</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => rejectJoin(req.user.id)}
+                                style={{ flex: 1, backgroundColor: '#FFF1F2', borderWidth: 1, borderColor: '#FECDD3', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
+                              >
+                                <Text style={{ color: C.rose600, fontWeight: '900', fontSize: 13 }}>Reject</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </Card>
+                        );
+                      })}
+                    </View>
+                  )}
+
                   <Text style={{ color: C.slate500, fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
                     {members.length} MEMBER{members.length !== 1 ? 'S' : ''} IN THIS GROUP
                   </Text>
