@@ -204,6 +204,7 @@ const getGroupByInvite = async (inviteCode) => {
     select: {
       id: true,
       name: true,
+      inviteCode: true,
       maxMembers: true,
       earlyExitFine: true,
       createdAt: true,

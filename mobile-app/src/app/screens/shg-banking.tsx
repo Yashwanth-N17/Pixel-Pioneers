@@ -527,7 +527,8 @@ export default function ShgBankingScreen() {
   const [preJoinGroup, setPreJoinGroup] = useState<any>(null);
 
   const user = useStore(s => s.user);
-  const lang = TRANSLATIONS[user?.language || 'English'];
+  const userLang = user?.language as any;
+  const lang = TRANSLATIONS[userLang] || TRANSLATIONS['English'];
 
   const pendingApprovals = useMemo(
     () => approvals.filter((a) => a.status === 'pending').length,
