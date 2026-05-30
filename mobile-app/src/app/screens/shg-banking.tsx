@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
+  Modal,
   RefreshControl,
   ScrollView,
   Text,
@@ -13,19 +16,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import QRCode from 'react-native-qrcode-svg';
 
 import { C } from '../../constants/colors';
 import { endpoints } from '../../services/api';
 
+// ─────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────
 type ShgTab = 'overview' | 'transactions' | 'approvals' | 'proposals' | 'members';
 
 type ShgGroup = {
   id: string;
   name: string;
+  inviteCode?: string;
   totalBalance?: number;
   approvalThreshold?: number;
   memberCount?: number;
-  currentUserRole?: 'admin' | 'member';
+  currentUserRole?: string;
 };
 
 type ShgTransaction = {
@@ -35,12 +43,14 @@ type ShgTransaction = {
   status: 'pending' | 'approved' | 'rejected' | 'executed';
   description?: string;
   createdAt?: string;
+  createdBy?: { name?: string; phone?: string };
 };
 
 type ShgApproval = {
   id: string;
   transactionId: string;
   amount: number;
+  description?: string;
   requestedBy?: string;
   status: 'pending' | 'approved' | 'rejected';
 };
@@ -50,54 +60,24 @@ type ShgProposal = {
   title: string;
   description?: string;
   status: 'open' | 'passed' | 'rejected' | 'expired';
-  yesVotes?: number;
-  noVotes?: number;
+  deadline?: string;
+  votes?: Array<{ vote: 'yes' | 'no'; userId: string }>;
 };
 
 type ShgMember = {
   id: string;
-  name: string;
-  role: 'admin' | 'member';
+  userId?: string;
+  name?: string;
+  role: string;
   trustScore?: number;
+  joinedAt?: string;
+  user?: { id: string; name: string; phone: string; village?: string };
 };
 
-const fmt = (amount: number) => 'Rs ' + amount.toLocaleString('en-IN');
-
-const sampleGroup: ShgGroup = {
-  id: 'demo-shg',
-  name: 'Sri Lakshmi Women SHG',
-  totalBalance: 124500,
-  approvalThreshold: 2,
-  memberCount: 12,
-  currentUserRole: 'admin',
-};
-
-const sampleTransactions: ShgTransaction[] = [
-  { id: 'tx1', type: 'deposit', amount: 5000, status: 'executed', description: 'Monthly savings deposit' },
-  { id: 'tx2', type: 'withdrawal', amount: 50000, status: 'pending', description: 'Emergency medical withdrawal' },
-  { id: 'tx3', type: 'loan_repayment', amount: 8000, status: 'executed', description: 'Member loan repayment' },
-];
-
-const sampleApprovals: ShgApproval[] = [
-  { id: 'ap1', transactionId: 'tx2', amount: 50000, requestedBy: 'Kavitha', status: 'pending' },
-];
-
-const sampleProposals: ShgProposal[] = [
-  {
-    id: 'pr1',
-    title: 'Increase monthly savings rule',
-    description: 'Move monthly savings from Rs 500 to Rs 750.',
-    status: 'open',
-    yesVotes: 7,
-    noVotes: 2,
-  },
-];
-
-const sampleMembers: ShgMember[] = [
-  { id: 'm1', name: 'Kavitha', role: 'admin', trustScore: 92 },
-  { id: 'm2', name: 'Lakshmi', role: 'member', trustScore: 86 },
-  { id: 'm3', name: 'Meena', role: 'member', trustScore: 81 },
-];
+// ─────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────
+const fmt = (amount: number) => 'Rs ' + (amount || 0).toLocaleString('en-IN');
 
 function statusColor(status: string) {
   if (status === 'executed' || status === 'approved' || status === 'passed') return C.emerald600;
@@ -105,7 +85,16 @@ function statusColor(status: string) {
   return C.rose600;
 }
 
-function Card({ children }: { children: React.ReactNode }) {
+function statusBg(status: string) {
+  if (status === 'executed' || status === 'approved' || status === 'passed') return '#ECFDF5';
+  if (status === 'pending' || status === 'open') return '#FFFBEB';
+  return '#FFF1F2';
+}
+
+// ─────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────
+function Card({ children, style }: { children: React.ReactNode; style?: object }) {
   return (
     <View
       style={{
@@ -115,6 +104,7 @@ function Card({ children }: { children: React.ReactNode }) {
         borderWidth: 1,
         borderColor: C.slate100,
         marginBottom: 12,
+        ...style,
       }}
     >
       {children}
@@ -122,17 +112,15 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
-function QuickAction({
-  icon,
-  label,
-  color,
-  onPress,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  color: string;
-  onPress: () => void;
-}) {
+function Badge({ text, color, bg }: { text: string; color: string; bg: string }) {
+  return (
+    <View style={{ backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 }}>
+      <Text style={{ color, fontWeight: '900', fontSize: 11, textTransform: 'uppercase' }}>{text}</Text>
+    </View>
+  );
+}
+
+function QuickAction({ icon, label, color, onPress }: { icon: React.ReactNode; label: string; color: string; onPress: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={{ flex: 1 }}>
       <View
@@ -147,13 +135,9 @@ function QuickAction({
       >
         <View
           style={{
-            width: 38,
-            height: 38,
-            borderRadius: 12,
+            width: 38, height: 38, borderRadius: 12,
             backgroundColor: `${color}1F`,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 10,
+            alignItems: 'center', justifyContent: 'center', marginBottom: 10,
           }}
         >
           {icon}
@@ -164,6 +148,115 @@ function QuickAction({
   );
 }
 
+// QR Code Modal
+function QRModal({ visible, inviteCode, groupName, onClose }: {
+  visible: boolean;
+  inviteCode: string;
+  groupName: string;
+  onClose: () => void;
+}) {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.04, duration: 1200, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [visible]);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+          <View style={{
+            backgroundColor: '#fff', borderRadius: 24, padding: 28, alignItems: 'center',
+            width: Dimensions.get('window').width - 64,
+          }}>
+            <LinearGradient
+              colors={[C.emerald600, C.teal600]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}
+            >
+              <Ionicons name="people" size={26} color="#fff" />
+            </LinearGradient>
+
+            <Text style={{ fontSize: 17, fontWeight: '900', color: C.slate900, textAlign: 'center', marginBottom: 4 }}>
+              {groupName}
+            </Text>
+            <Text style={{ color: C.slate500, fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
+              Scan this QR code to join the SHG group
+            </Text>
+
+            <Animated.View style={{ transform: [{ scale: pulse }] }}>
+              <View style={{
+                padding: 16,
+                backgroundColor: '#fff',
+                borderRadius: 16,
+                borderWidth: 2,
+                borderColor: C.emerald600,
+                shadowColor: C.emerald600,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.2,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                <QRCode
+                  value={inviteCode}
+                  size={180}
+                  color={C.slate900}
+                  backgroundColor="#fff"
+                />
+              </View>
+            </Animated.View>
+
+            <View style={{
+              marginTop: 20,
+              backgroundColor: C.slate50,
+              borderRadius: 12,
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              borderWidth: 1,
+              borderColor: C.slate200,
+              alignItems: 'center',
+            }}>
+              <Text style={{ color: C.slate500, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>
+                Invite Code
+              </Text>
+              <Text style={{ color: C.emerald600, fontSize: 28, fontWeight: '900', letterSpacing: 4, marginTop: 4 }}>
+                {inviteCode}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={onClose}
+              style={{
+                marginTop: 20,
+                backgroundColor: C.slate900,
+                borderRadius: 12,
+                paddingVertical: 12,
+                paddingHorizontal: 36,
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '900' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────
 export default function ShgBankingScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ShgTab>('overview');
@@ -174,26 +267,31 @@ export default function ShgBankingScreen() {
   const [approvals, setApprovals] = useState<ShgApproval[]>([]);
   const [proposals, setProposals] = useState<ShgProposal[]>([]);
   const [members, setMembers] = useState<ShgMember[]>([]);
+
+  // Create / Join form state
   const [groupName, setGroupName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+
+  // Withdrawal form
   const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
   const [withdrawalPurpose, setWithdrawalPurpose] = useState('');
 
+  // Proposal form
+  const [showProposalForm, setShowProposalForm] = useState(false);
+  const [proposalTitle, setProposalTitle] = useState('');
+  const [proposalDesc, setProposalDesc] = useState('');
+
+  // QR modal
+  const [showQR, setShowQR] = useState(false);
+
   const pendingApprovals = useMemo(
-    () => approvals.filter((approval) => approval.status === 'pending').length,
+    () => approvals.filter((a) => a.status === 'pending').length,
     [approvals]
   );
 
-  const hydrateFallback = () => {
-    setGroup(sampleGroup);
-    setTransactions(sampleTransactions);
-    setApprovals(sampleApprovals);
-    setProposals(sampleProposals);
-    setMembers(sampleMembers);
-  };
-
-  const loadShg = async () => {
+  // ── Data loading ──────────────────────────────────────
+  const loadShg = useCallback(async () => {
     try {
       const groupsRes = await endpoints.getMyShgGroups();
       const groups: ShgGroup[] = groupsRes.data?.data || [];
@@ -208,7 +306,6 @@ export default function ShgBankingScreen() {
         return;
       }
 
-      setGroup(selectedGroup);
       const [dashboardRes, txRes, approvalsRes, proposalsRes, membersRes] = await Promise.all([
         endpoints.getShgDashboard(selectedGroup.id),
         endpoints.getShgTransactions(selectedGroup.id),
@@ -218,22 +315,37 @@ export default function ShgBankingScreen() {
       ]);
 
       const dashboard = dashboardRes.data?.data || {};
-      setGroup({ ...selectedGroup, ...dashboard.group, ...dashboard.summary });
-      setTransactions(txRes.data?.data || []);
-      setApprovals(approvalsRes.data?.data || []);
+      setGroup({
+        ...selectedGroup,
+        ...dashboard.group,
+        inviteCode: dashboard.group?.inviteCode || selectedGroup.inviteCode,
+      });
+
+      // Map transactions
+      const rawTx: any[] = txRes.data?.data || [];
+      setTransactions(rawTx);
+
+      // Map approvals — these are pending withdrawal transactions
+      const rawApprovals: any[] = approvalsRes.data?.data || [];
+      setApprovals(rawApprovals.map((tx: any) => ({
+        id: tx.id,
+        transactionId: tx.id,
+        amount: tx.amount,
+        description: tx.description,
+        requestedBy: tx.createdBy?.name || tx.createdBy?.phone || 'Member',
+        status: tx.status,
+      })));
+
       setProposals(proposalsRes.data?.data || []);
       setMembers(membersRes.data?.data || []);
     } catch (error) {
-      console.warn('Failed to load SHG data, using preview data', error);
-      hydrateFallback();
+      console.warn('Failed to load SHG data:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadShg();
   }, []);
+
+  useEffect(() => { loadShg(); }, [loadShg]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -241,86 +353,113 @@ export default function ShgBankingScreen() {
     setRefreshing(false);
   };
 
+  // ── Actions ───────────────────────────────────────────
   const createGroup = async () => {
     if (!groupName.trim()) {
       Alert.alert('Group name needed', 'Enter an SHG name to create a group.');
       return;
     }
-
     try {
-      const res = await endpoints.createShgGroup({
-        name: groupName.trim(),
-        approvalThreshold: 2,
-      });
-      setGroup(res.data?.data || { ...sampleGroup, name: groupName.trim() });
+      const res = await endpoints.createShgGroup({ name: groupName.trim() });
+      const created = res.data?.data;
+      setGroup(created);
       setGroupName('');
-      Alert.alert('SHG created', 'Your SHG group is ready.');
+      // Show QR right away after creation
       await loadShg();
+      setShowQR(true);
     } catch (error: any) {
-      Alert.alert('Backend not ready', error?.response?.data?.message || 'Showing preview group for now.');
-      setGroup({ ...sampleGroup, name: groupName.trim() });
-      setGroupName('');
+      Alert.alert('Error', error?.response?.data?.message || 'Could not create group. Please try again.');
     }
   };
 
   const joinGroup = async () => {
     if (!inviteCode.trim()) {
-      Alert.alert('Invite code needed', 'Enter the SHG invite code or group ID.');
+      Alert.alert('Code needed', 'Enter the invite code shown on the admin\'s QR.');
       return;
     }
-
     try {
-      const res = await endpoints.joinShgGroup({ inviteCode: inviteCode.trim() });
-      setGroup(res.data?.data || sampleGroup);
+      await endpoints.joinShgGroup({ inviteCode: inviteCode.trim().toUpperCase() });
       setInviteCode('');
-      Alert.alert('Joined SHG', 'You are now a group member.');
+      Alert.alert('✅ Joined!', 'You are now a member of the SHG group.');
       await loadShg();
     } catch (error: any) {
-      Alert.alert('Backend not ready', error?.response?.data?.message || 'Showing preview group for now.');
-      setGroup(sampleGroup);
-      setInviteCode('');
+      Alert.alert('Error', error?.response?.data?.message || 'Invalid invite code. Please try again.');
     }
   };
 
   const approveTransaction = async (transactionId: string) => {
     try {
       await endpoints.approveShgTransaction(transactionId);
-      Alert.alert('Approved', 'Your approval has been recorded.');
+      Alert.alert('✅ Approved', 'Your approval has been recorded.');
       await loadShg();
     } catch (error: any) {
-      Alert.alert('Backend not ready', error?.response?.data?.message || 'Approval will work once SHG APIs are live.');
+      Alert.alert('Error', error?.response?.data?.message || 'Could not approve transaction.');
     }
+  };
+
+  const rejectTransaction = async (transactionId: string) => {
+    Alert.alert(
+      'Reject Withdrawal',
+      'Are you sure you want to reject this withdrawal request?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await endpoints.rejectShgTransaction(transactionId, 'Rejected by member');
+              Alert.alert('Rejected', 'The withdrawal request has been rejected.');
+              await loadShg();
+            } catch (error: any) {
+              Alert.alert('Error', error?.response?.data?.message || 'Could not reject transaction.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const createWithdrawalRequest = async () => {
     if (!group) return;
-
     const amount = Number(withdrawalAmount);
     if (!amount || amount < 1) {
       Alert.alert('Invalid amount', 'Enter a withdrawal amount greater than zero.');
       return;
     }
-
     try {
-      const res = await endpoints.createShgTransaction(group.id, {
+      await endpoints.createShgTransaction(group.id, {
         type: 'withdrawal',
         amount,
         description: withdrawalPurpose || 'SHG withdrawal request',
       });
-      const created = res.data?.data;
-      if (created) {
-        setTransactions((items) => [created, ...items]);
-      }
       setWithdrawalAmount('');
       setWithdrawalPurpose('');
       setShowWithdrawalForm(false);
       Alert.alert('Request submitted', 'Withdrawal is pending member approval.');
       await loadShg();
     } catch (error: any) {
-      Alert.alert(
-        'Backend not ready',
-        error?.response?.data?.message || 'Withdrawal requests will submit once SHG APIs are live.'
-      );
+      Alert.alert('Error', error?.response?.data?.message || 'Could not submit withdrawal.');
+    }
+  };
+
+  const createProposal = async () => {
+    if (!group || !proposalTitle.trim()) {
+      Alert.alert('Title needed', 'Enter a proposal title.');
+      return;
+    }
+    try {
+      await endpoints.createShgProposal(group.id, {
+        title: proposalTitle.trim(),
+        description: proposalDesc.trim() || undefined,
+      });
+      setProposalTitle('');
+      setProposalDesc('');
+      setShowProposalForm(false);
+      Alert.alert('✅ Proposal created', 'Members can now vote on your proposal.');
+      await loadShg();
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.message || 'Could not create proposal.');
     }
   };
 
@@ -330,101 +469,159 @@ export default function ShgBankingScreen() {
       Alert.alert('Vote recorded', `You voted ${vote.toUpperCase()}.`);
       await loadShg();
     } catch (error: any) {
-      Alert.alert('Backend not ready', error?.response?.data?.message || 'Voting will work once SHG APIs are live.');
+      Alert.alert('Error', error?.response?.data?.message || 'Could not record vote.');
     }
   };
 
+  // ── Loading ──────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.slate50 }}>
-        <ActivityIndicator color={C.emerald600} />
-        <Text style={{ color: C.slate500, marginTop: 10, fontWeight: '700' }}>Loading SHG banking...</Text>
+        <ActivityIndicator color={C.emerald600} size="large" />
+        <Text style={{ color: C.slate500, marginTop: 12, fontWeight: '700' }}>Loading SHG banking...</Text>
       </SafeAreaView>
     );
   }
 
+  // ── Render ──────────────────────────────────────────
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.slate50 }} edges={['top']}>
+
+      {/* QR Modal */}
+      {group?.inviteCode && (
+        <QRModal
+          visible={showQR}
+          inviteCode={group.inviteCode}
+          groupName={group.name}
+          onClose={() => setShowQR(false)}
+        />
+      )}
+
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingBottom: 34 }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={C.emerald600} />}
       >
+        {/* ── Header ── */}
         <LinearGradient
           colors={[C.emerald600, C.teal600]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 26, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}
         >
           <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 16 }}>
             <Feather name="arrow-left" size={22} color="#fff" />
           </TouchableOpacity>
-          <Text className="text-white text-2xl font-black">SHG Digital Banking</Text>
-          <Text className="text-emerald-50 text-sm mt-2">
-            Group savings, approvals, voting, payments, and audit trail.
+          <Text style={{ color: '#fff', fontSize: 24, fontWeight: '900' }}>SHG Digital Banking</Text>
+          <Text style={{ color: '#d1fae5', fontSize: 13, marginTop: 6 }}>
+            Group savings · Approvals · Voting · Audit trail
           </Text>
         </LinearGradient>
 
-        <View className="px-5 mt-5">
+        <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
           {!group ? (
+            /* ── No group: Create or Join ── */
             <>
               <Card>
-                <Text className="text-slate-900 text-lg font-black">Create SHG Group</Text>
-                <Text className="text-slate-500 text-sm mt-1 mb-4">
-                  Admin creates the group. Minimum approval threshold is fixed at 2.
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                    <Ionicons name="add-circle" size={20} color={C.emerald600} />
+                  </View>
+                  <View>
+                    <Text style={{ color: C.slate900, fontSize: 16, fontWeight: '900' }}>Create SHG Group</Text>
+                    <Text style={{ color: C.slate500, fontSize: 12 }}>You become the group admin</Text>
+                  </View>
+                </View>
                 <TextInput
                   value={groupName}
                   onChangeText={setGroupName}
                   placeholder="e.g. Sri Lakshmi Women SHG"
                   placeholderTextColor={C.slate400}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 mb-3"
+                  style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12 }}
                 />
-                <TouchableOpacity onPress={createGroup} className="bg-emerald-600 rounded-xl py-3 items-center">
-                  <Text className="text-white font-black">Create Group</Text>
+                <TouchableOpacity onPress={createGroup} style={{ backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Create Group</Text>
                 </TouchableOpacity>
               </Card>
 
               <Card>
-                <Text className="text-slate-900 text-lg font-black">Join Existing SHG</Text>
-                <Text className="text-slate-500 text-sm mt-1 mb-4">
-                  Members can join using an invite code or group ID from the admin.
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#F0F9FF', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                    <Ionicons name="qr-code" size={20} color={C.blue600} />
+                  </View>
+                  <View>
+                    <Text style={{ color: C.slate900, fontSize: 16, fontWeight: '900' }}>Join Existing SHG</Text>
+                    <Text style={{ color: C.slate500, fontSize: 12 }}>Enter the 6-letter invite code</Text>
+                  </View>
+                </View>
                 <TextInput
                   value={inviteCode}
                   onChangeText={setInviteCode}
-                  placeholder="Invite code or group ID"
+                  placeholder="e.g. SRI847"
                   placeholderTextColor={C.slate400}
                   autoCapitalize="characters"
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 mb-3"
+                  maxLength={10}
+                  style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12, fontWeight: '900', fontSize: 18, letterSpacing: 4, textAlign: 'center' }}
                 />
-                <TouchableOpacity onPress={joinGroup} className="bg-slate-900 rounded-xl py-3 items-center">
-                  <Text className="text-white font-black">Join Group</Text>
+                <TouchableOpacity onPress={joinGroup} style={{ backgroundColor: C.slate900, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Join Group</Text>
                 </TouchableOpacity>
               </Card>
             </>
           ) : (
+            /* ── Has group: Full dashboard ── */
             <>
+              {/* Group Balance Card */}
               <Card>
-                <View className="flex-row justify-between items-start">
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1 }}>
-                    <Text className="text-slate-500 text-xs font-bold uppercase tracking-wider">Active SHG</Text>
-                    <Text className="text-slate-900 text-xl font-black mt-1">{group.name}</Text>
-                    <Text className="text-slate-500 text-sm mt-1">
+                    <Text style={{ color: C.slate500, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Active SHG</Text>
+                    <Text style={{ color: C.slate900, fontSize: 20, fontWeight: '900', marginTop: 2 }}>{group.name}</Text>
+                    <Text style={{ color: C.slate500, fontSize: 13, marginTop: 2 }}>
                       {group.memberCount || members.length} members · min {group.approvalThreshold || 2} approvals
                     </Text>
                   </View>
-                  <View className="bg-emerald-50 px-3 py-2 rounded-xl">
-                    <Text className="text-emerald-700 font-black uppercase text-xs">{group.currentUserRole || 'member'}</Text>
-                  </View>
+                  <Badge
+                    text={group.currentUserRole || 'member'}
+                    color={C.emerald700}
+                    bg="#ECFDF5"
+                  />
                 </View>
-                <Text className="text-slate-900 text-3xl font-black mt-5">{fmt(group.totalBalance || 0)}</Text>
-                <Text className="text-slate-500 text-sm mt-1">Total group balance</Text>
+
+                <Text style={{ color: C.slate900, fontSize: 32, fontWeight: '900', marginTop: 18 }}>
+                  {fmt(group.totalBalance || 0)}
+                </Text>
+                <Text style={{ color: C.slate500, fontSize: 13, marginTop: 2 }}>Total group balance</Text>
+
+                {/* Invite code + QR */}
+                {group.inviteCode && (
+                  <TouchableOpacity
+                    onPress={() => setShowQR(true)}
+                    style={{
+                      marginTop: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#F0FDF4',
+                      borderRadius: 10,
+                      padding: 10,
+                      borderWidth: 1,
+                      borderColor: '#BBF7D0',
+                      gap: 8,
+                    }}
+                  >
+                    <Ionicons name="qr-code-outline" size={20} color={C.emerald600} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: C.slate500, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' }}>Invite Code (tap to share QR)</Text>
+                      <Text style={{ color: C.emerald700, fontSize: 18, fontWeight: '900', letterSpacing: 3 }}>{group.inviteCode}</Text>
+                    </View>
+                    <Feather name="share-2" size={16} color={C.emerald600} />
+                  </TouchableOpacity>
+                )}
               </Card>
 
-              <Text className="text-slate-900 text-base font-black mb-3">Quick Actions</Text>
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              {/* Quick Actions */}
+              <Text style={{ color: C.slate900, fontSize: 15, fontWeight: '900', marginBottom: 10 }}>Quick Actions</Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
                 <QuickAction
                   label="Deposit / Pay"
                   color={C.emerald600}
@@ -435,13 +632,10 @@ export default function ShgBankingScreen() {
                   label="Withdrawal Request"
                   color={C.rose600}
                   icon={<Feather name="send" size={19} color={C.rose600} />}
-                  onPress={() => {
-                    setShowWithdrawalForm((current) => !current);
-                    setActiveTab('transactions');
-                  }}
+                  onPress={() => { setShowWithdrawalForm((v) => !v); setActiveTab('transactions'); }}
                 />
               </View>
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 18 }}>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 18 }}>
                 <QuickAction
                   label="Approvals"
                   color={C.blue600}
@@ -449,50 +643,83 @@ export default function ShgBankingScreen() {
                   onPress={() => setActiveTab('approvals')}
                 />
                 <QuickAction
-                  label="Rules & Proposals"
+                  label="New Proposal"
                   color={C.amber600}
                   icon={<MaterialIcons name="how-to-vote" size={20} color={C.amber600} />}
-                  onPress={() => setActiveTab('proposals')}
+                  onPress={() => { setShowProposalForm((v) => !v); setActiveTab('proposals'); }}
                 />
               </View>
 
+              {/* Withdrawal Form */}
               {showWithdrawalForm && (
                 <Card>
-                  <Text className="text-slate-900 font-black mb-2">New Withdrawal Request</Text>
-                  <Text className="text-slate-500 text-sm mb-4">
-                    This starts as pending and needs at least {group.approvalThreshold || 2} approvals.
+                  <Text style={{ color: C.slate900, fontWeight: '900', fontSize: 15, marginBottom: 4 }}>New Withdrawal Request</Text>
+                  <Text style={{ color: C.slate500, fontSize: 13, marginBottom: 14 }}>
+                    Needs at least {group.approvalThreshold || 2} approvals from office bearers.
                   </Text>
                   <TextInput
                     value={withdrawalAmount}
                     onChangeText={setWithdrawalAmount}
-                    placeholder="Amount"
+                    placeholder="Amount (Rs)"
                     placeholderTextColor={C.slate400}
                     keyboardType="numeric"
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 mb-3"
+                    style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 10 }}
                   />
                   <TextInput
                     value={withdrawalPurpose}
                     onChangeText={setWithdrawalPurpose}
-                    placeholder="Purpose, e.g. medical emergency"
+                    placeholder="Purpose (e.g. medical emergency)"
                     placeholderTextColor={C.slate400}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 mb-3"
+                    style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12 }}
                   />
-                  <View className="flex-row gap-2">
-                    <TouchableOpacity onPress={createWithdrawalRequest} className="flex-1 bg-emerald-600 rounded-xl py-3 items-center">
-                      <Text className="text-white font-black">Submit Request</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity onPress={createWithdrawalRequest} style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '900' }}>Submit</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setShowWithdrawalForm(false)} className="flex-1 bg-slate-100 rounded-xl py-3 items-center">
-                      <Text className="text-slate-700 font-black">Cancel</Text>
+                    <TouchableOpacity onPress={() => setShowWithdrawalForm(false)} style={{ flex: 1, backgroundColor: C.slate100, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                      <Text style={{ color: C.slate700, fontWeight: '900' }}>Cancel</Text>
                     </TouchableOpacity>
                   </View>
                 </Card>
               )}
 
+              {/* Proposal Form */}
+              {showProposalForm && (
+                <Card>
+                  <Text style={{ color: C.slate900, fontWeight: '900', fontSize: 15, marginBottom: 14 }}>Create New Proposal</Text>
+                  <TextInput
+                    value={proposalTitle}
+                    onChangeText={setProposalTitle}
+                    placeholder="Proposal title"
+                    placeholderTextColor={C.slate400}
+                    style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 10 }}
+                  />
+                  <TextInput
+                    value={proposalDesc}
+                    onChangeText={setProposalDesc}
+                    placeholder="Description (optional)"
+                    placeholderTextColor={C.slate400}
+                    multiline
+                    numberOfLines={3}
+                    style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: C.slate900, marginBottom: 12, minHeight: 72, textAlignVertical: 'top' }}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity onPress={createProposal} style={{ flex: 1, backgroundColor: C.amber600, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '900' }}>Create</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setShowProposalForm(false)} style={{ flex: 1, backgroundColor: C.slate100, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                      <Text style={{ color: C.slate700, fontWeight: '900' }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Card>
+              )}
+
+              {/* Tab Bar */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
                 {[
                   ['overview', 'Dashboard'],
                   ['transactions', 'Transactions'],
-                  ['approvals', `Approvals ${pendingApprovals ? `(${pendingApprovals})` : ''}`],
+                  ['approvals', `Approvals${pendingApprovals ? ` (${pendingApprovals})` : ''}`],
                   ['proposals', 'Proposals'],
                   ['members', 'Members'],
                 ].map(([key, label]) => (
@@ -504,7 +731,7 @@ export default function ShgBankingScreen() {
                       borderColor: activeTab === key ? C.emerald600 : C.slate200,
                       borderWidth: 1,
                       borderRadius: 999,
-                      paddingHorizontal: 14,
+                      paddingHorizontal: 16,
                       paddingVertical: 9,
                       marginRight: 8,
                     }}
@@ -516,108 +743,229 @@ export default function ShgBankingScreen() {
                 ))}
               </ScrollView>
 
+              {/* ── Overview Tab ── */}
               {activeTab === 'overview' && (
                 <>
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    <Card>
-                      <Text className="text-slate-500 text-xs font-bold">Pending Approvals</Text>
-                      <Text className="text-slate-900 text-2xl font-black mt-1">{pendingApprovals}</Text>
-                    </Card>
-                    <Card>
-                      <Text className="text-slate-500 text-xs font-bold">Open Proposals</Text>
-                      <Text className="text-slate-900 text-2xl font-black mt-1">
-                        {proposals.filter((item) => item.status === 'open').length}
-                      </Text>
-                    </Card>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Card>
+                        <Text style={{ color: C.slate500, fontSize: 11, fontWeight: '700' }}>PENDING APPROVALS</Text>
+                        <Text style={{ color: C.slate900, fontSize: 26, fontWeight: '900', marginTop: 4 }}>{pendingApprovals}</Text>
+                      </Card>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Card>
+                        <Text style={{ color: C.slate500, fontSize: 11, fontWeight: '700' }}>OPEN PROPOSALS</Text>
+                        <Text style={{ color: C.slate900, fontSize: 26, fontWeight: '900', marginTop: 4 }}>
+                          {proposals.filter((p) => p.status === 'open').length}
+                        </Text>
+                      </Card>
+                    </View>
                   </View>
                   <Card>
-                    <Text className="text-slate-900 font-black mb-2">Approval Rule</Text>
-                    <Text className="text-slate-600 text-sm leading-5">
-                      Every withdrawal needs at least 2 approvals. Maximum approvals can include every member in the SHG.
+                    <Text style={{ color: C.slate900, fontWeight: '900', marginBottom: 6 }}>Approval Rule</Text>
+                    <Text style={{ color: C.slate600, fontSize: 13, lineHeight: 20 }}>
+                      Every withdrawal needs at least {group.approvalThreshold || 2} approvals from office bearers (treasurer, president, or admin) before it is executed.
                     </Text>
+                  </Card>
+                  <Card>
+                    <Text style={{ color: C.slate900, fontWeight: '900', marginBottom: 6 }}>Share this Group</Text>
+                    <Text style={{ color: C.slate600, fontSize: 13, lineHeight: 20, marginBottom: 12 }}>
+                      Share the QR code or invite code with members so they can join this SHG group.
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setShowQR(true)}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 12 }}
+                    >
+                      <Ionicons name="qr-code-outline" size={18} color="#fff" />
+                      <Text style={{ color: '#fff', fontWeight: '900' }}>Show QR Code</Text>
+                    </TouchableOpacity>
                   </Card>
                 </>
               )}
 
-              {activeTab === 'transactions' && transactions.map((tx) => (
-                <Card key={tx.id}>
-                  <View className="flex-row justify-between">
-                    <View style={{ flex: 1 }}>
-                      <Text className="text-slate-900 font-black capitalize">{tx.type.replace('_', ' ')}</Text>
-                      <Text className="text-slate-500 text-sm mt-1">{tx.description || 'SHG transaction'}</Text>
-                    </View>
-                    <View className="items-end">
-                      <Text className="text-slate-900 font-black">{fmt(tx.amount)}</Text>
-                      <Text style={{ color: statusColor(tx.status), fontSize: 12, fontWeight: '900', marginTop: 4 }}>
-                        {tx.status.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-                </Card>
-              ))}
+              {/* ── Transactions Tab ── */}
+              {activeTab === 'transactions' && (
+                <>
+                  {transactions.length === 0 && (
+                    <Card>
+                      <Text style={{ color: C.slate500, textAlign: 'center', fontWeight: '700' }}>No transactions yet.</Text>
+                    </Card>
+                  )}
+                  {transactions.map((tx) => (
+                    <Card key={tx.id}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: C.slate900, fontWeight: '900', textTransform: 'capitalize' }}>
+                            {tx.type.replace('_', ' ')}
+                          </Text>
+                          <Text style={{ color: C.slate500, fontSize: 12, marginTop: 2 }}>
+                            {tx.description || 'SHG transaction'}
+                          </Text>
+                          {tx.createdBy?.name && (
+                            <Text style={{ color: C.slate400, fontSize: 11, marginTop: 2 }}>by {tx.createdBy.name}</Text>
+                          )}
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={{ color: C.slate900, fontWeight: '900' }}>{fmt(tx.amount)}</Text>
+                          <View style={{ marginTop: 6 }}>
+                            <Badge
+                              text={tx.status}
+                              color={statusColor(tx.status)}
+                              bg={statusBg(tx.status)}
+                            />
+                          </View>
+                        </View>
+                      </View>
+                    </Card>
+                  ))}
+                </>
+              )}
 
-              {activeTab === 'approvals' && approvals.map((approval) => (
-                <Card key={approval.id}>
-                  <Text className="text-slate-900 font-black">Withdrawal Approval</Text>
-                  <Text className="text-slate-500 text-sm mt-1">
-                    Requested by {approval.requestedBy || 'member'} · {fmt(approval.amount)}
+              {/* ── Approvals Tab ── */}
+              {activeTab === 'approvals' && (
+                <>
+                  {approvals.filter((a) => a.status === 'pending').length === 0 && (
+                    <Card>
+                      <Text style={{ color: C.slate500, textAlign: 'center', fontWeight: '700' }}>No pending approvals.</Text>
+                    </Card>
+                  )}
+                  {approvals.filter((a) => a.status === 'pending').map((approval) => (
+                    <Card key={approval.id}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <View>
+                          <Text style={{ color: C.slate900, fontWeight: '900' }}>Withdrawal Request</Text>
+                          <Text style={{ color: C.slate500, fontSize: 12, marginTop: 2 }}>
+                            by {approval.requestedBy || 'member'}
+                          </Text>
+                          {approval.description && (
+                            <Text style={{ color: C.slate500, fontSize: 12, marginTop: 2 }}>{approval.description}</Text>
+                          )}
+                        </View>
+                        <Text style={{ color: C.slate900, fontWeight: '900', fontSize: 18 }}>{fmt(approval.amount)}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => approveTransaction(approval.transactionId)}
+                          style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '900' }}>✓ Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => rejectTransaction(approval.transactionId)}
+                          style={{ flex: 1, backgroundColor: '#FFF1F2', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#FECDD3' }}
+                        >
+                          <Text style={{ color: C.rose600, fontWeight: '900' }}>✕ Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Card>
+                  ))}
+                </>
+              )}
+
+              {/* ── Proposals Tab ── */}
+              {activeTab === 'proposals' && (
+                <>
+                  {proposals.length === 0 && (
+                    <Card>
+                      <Text style={{ color: C.slate500, textAlign: 'center', fontWeight: '700' }}>No proposals yet.</Text>
+                    </Card>
+                  )}
+                  {proposals.map((proposal) => {
+                    const yesVotes = proposal.votes?.filter((v) => v.vote === 'yes').length ?? 0;
+                    const noVotes = proposal.votes?.filter((v) => v.vote === 'no').length ?? 0;
+                    return (
+                      <Card key={proposal.id}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: C.slate900, fontWeight: '900' }}>{proposal.title}</Text>
+                            {proposal.description && (
+                              <Text style={{ color: C.slate500, fontSize: 12, marginTop: 4, lineHeight: 18 }}>
+                                {proposal.description}
+                              </Text>
+                            )}
+                          </View>
+                          <Badge
+                            text={proposal.status}
+                            color={statusColor(proposal.status)}
+                            bg={statusBg(proposal.status)}
+                          />
+                        </View>
+                        <Text style={{ color: C.slate400, fontSize: 12, marginBottom: 10 }}>
+                          ✓ Yes {yesVotes} · ✕ No {noVotes}
+                        </Text>
+                        {proposal.status === 'open' && (
+                          <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity
+                              onPress={() => voteProposal(proposal.id, 'yes')}
+                              style={{ flex: 1, backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                            >
+                              <Text style={{ color: '#fff', fontWeight: '900' }}>Vote Yes</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => voteProposal(proposal.id, 'no')}
+                              style={{ flex: 1, backgroundColor: C.slate100, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                            >
+                              <Text style={{ color: C.slate700, fontWeight: '900' }}>Vote No</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* ── Members Tab — visible to everyone ── */}
+              {activeTab === 'members' && (
+                <>
+                  <Text style={{ color: C.slate500, fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
+                    {members.length} MEMBER{members.length !== 1 ? 'S' : ''} IN THIS GROUP
                   </Text>
-                  <View className="flex-row gap-2 mt-4">
-                    <TouchableOpacity
-                      onPress={() => approveTransaction(approval.transactionId)}
-                      className="flex-1 bg-emerald-600 rounded-xl py-3 items-center"
-                    >
-                      <Text className="text-white font-black">Approve</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => Alert.alert('Reject', 'This will call POST /api/shg/transactions/:id/reject.')}
-                      className="flex-1 bg-rose-50 rounded-xl py-3 items-center"
-                    >
-                      <Text className="text-rose-600 font-black">Reject</Text>
-                    </TouchableOpacity>
-                  </View>
-                </Card>
-              ))}
-
-              {activeTab === 'proposals' && proposals.map((proposal) => (
-                <Card key={proposal.id}>
-                  <View className="flex-row justify-between">
-                    <View style={{ flex: 1 }}>
-                      <Text className="text-slate-900 font-black">{proposal.title}</Text>
-                      <Text className="text-slate-500 text-sm mt-1">{proposal.description}</Text>
-                    </View>
-                    <Text style={{ color: statusColor(proposal.status), fontSize: 12, fontWeight: '900' }}>
-                      {proposal.status.toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text className="text-slate-500 text-xs mt-3">
-                    Yes {proposal.yesVotes || 0} · No {proposal.noVotes || 0}
-                  </Text>
-                  <View className="flex-row gap-2 mt-4">
-                    <TouchableOpacity onPress={() => voteProposal(proposal.id, 'yes')} className="flex-1 bg-emerald-600 rounded-xl py-3 items-center">
-                      <Text className="text-white font-black">Vote Yes</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => voteProposal(proposal.id, 'no')} className="flex-1 bg-slate-100 rounded-xl py-3 items-center">
-                      <Text className="text-slate-700 font-black">Vote No</Text>
-                    </TouchableOpacity>
-                  </View>
-                </Card>
-              ))}
-
-              {activeTab === 'members' && members.map((member) => (
-                <Card key={member.id}>
-                  <View className="flex-row justify-between items-center">
-                    <View>
-                      <Text className="text-slate-900 font-black">{member.name}</Text>
-                      <Text className="text-slate-500 text-sm mt-1 capitalize">{member.role}</Text>
-                    </View>
-                    <View className="items-end">
-                      <Text className="text-slate-500 text-xs font-bold">Trust Score</Text>
-                      <Text className="text-emerald-600 text-lg font-black">{member.trustScore || 75}</Text>
-                    </View>
-                  </View>
-                </Card>
-              ))}
+                  {members.length === 0 && (
+                    <Card>
+                      <Text style={{ color: C.slate500, textAlign: 'center', fontWeight: '700' }}>No members found.</Text>
+                    </Card>
+                  )}
+                  {members.map((member) => {
+                    const displayName = member.user?.name || member.name || 'Member';
+                    const displayRole = member.role || 'member';
+                    const trust = member.trustScore ?? 75;
+                    return (
+                      <Card key={member.id || member.userId}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <View style={{
+                              width: 44, height: 44, borderRadius: 22,
+                              backgroundColor: C.emerald600,
+                              alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16 }}>
+                                {displayName.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View>
+                              <Text style={{ color: C.slate900, fontWeight: '900' }}>{displayName}</Text>
+                              <Text style={{ color: C.slate500, fontSize: 12, marginTop: 2, textTransform: 'capitalize' }}>
+                                {displayRole}
+                              </Text>
+                              {member.user?.village && (
+                                <Text style={{ color: C.slate400, fontSize: 11 }}>{member.user.village}</Text>
+                              )}
+                            </View>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={{ color: C.slate400, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' }}>Trust</Text>
+                            <Text style={{ color: trust >= 80 ? C.emerald600 : trust >= 60 ? C.amber600 : C.rose600, fontSize: 20, fontWeight: '900' }}>
+                              {trust}
+                            </Text>
+                          </View>
+                        </View>
+                      </Card>
+                    );
+                  })}
+                </>
+              )}
             </>
           )}
         </View>

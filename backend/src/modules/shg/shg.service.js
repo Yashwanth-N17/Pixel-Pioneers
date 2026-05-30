@@ -67,8 +67,15 @@ const getApprovalUserIds = async (client, groupId, creatorId) => {
 };
 
 const createGroup = async (userId, payload) => {
-  // Generate a random 6-character alphanumeric invite code
-  const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  // Generate a name-based invite code: first 3 letters of group name (uppercased) + 3 random digits
+  // e.g. "Sri Lakshmi SHG" → "SRI" + "847" = "SRI847"
+  const prefix = payload.name
+    .replace(/[^a-zA-Z]/g, '')  // strip non-letters
+    .substring(0, 3)
+    .toUpperCase()
+    .padEnd(3, 'X');             // pad to 3 chars if name is too short
+  const suffix = Math.floor(100 + Math.random() * 900).toString(); // 3 digit number
+  const inviteCode = `${prefix}${suffix}`;
 
   return prisma.$transaction(async (tx) => {
     const group = await tx.shgGroup.create({
@@ -190,51 +197,48 @@ const addMember = async (actorId, groupId, payload) => {
 };
 
 const joinGroup = async (userId, inviteCode) => {
-  return prisma.$transaction(async (tx) => {
-    // inviteCode can be either the 6-character code or the group ID UUID
-    const group = await tx.shgGroup.findFirst({
-      where: {
-        OR: [
-          { inviteCode },
-          { id: inviteCode }
-        ]
-      }
-    });
-
-    if (!group) throw makeError("Invalid invite code or group not found.", 404);
-
-    const existingMember = await tx.shgMember.findUnique({
-      where: { groupId_userId: { groupId: group.id, userId } }
-    });
-
-    if (existingMember) {
-      throw makeError("You are already a member of this SHG group.", 409);
+  const group = await prisma.shgGroup.findFirst({
+    where: {
+      OR: [
+        { inviteCode: inviteCode.toUpperCase() },
+        { inviteCode },
+        { id: inviteCode },
+      ]
     }
+  });
 
-    const member = await tx.shgMember.create({
+  if (!group) throw makeError("Invalid invite code or group not found.", 404);
+
+  const existingMember = await prisma.shgMember.findUnique({
+    where: { groupId_userId: { groupId: group.id, userId } }
+  });
+
+  if (existingMember) {
+    throw makeError("You are already a member of this SHG group.", 409);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.shgMember.create({
       data: {
         groupId: group.id,
         userId,
         role: "member",
-        trustScore: 75, // Default score for joining members
+        trustScore: 75,
       },
-      include: { user: { select: { id: true, name: true, phone: true } } },
     });
 
     await logAudit(tx, group.id, userId, "member_joined", {
-      memberId: member.id,
-      userId: member.userId,
+      userId,
       inviteCode,
     });
-    
+
     // Notify admins
     const adminIds = await getApprovalUserIds(tx, group.id, userId);
-    await notifyUsers(tx, group.id, adminIds, `A new member joined the SHG group.`);
-
-    // Return the dashboard format so the frontend can immediately show it
-    const dashboard = await getDashboard(userId, group.id);
-    return dashboard;
+    await notifyUsers(tx, group.id, adminIds, `A new member joined the SHG group via invite code.`);
   });
+
+  // Return the full dashboard after joining
+  return getDashboard(userId, group.id);
 };
 
 const getTransactions = async (userId, groupId) => {
