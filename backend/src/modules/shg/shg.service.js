@@ -110,7 +110,7 @@ const getMyGroups = async (userId) => {
     include: {
       members: {
         where: { userId },
-        select: { role: true, trustScore: true, joinedAt: true },
+        select: { role: true, trustScore: true, joinedAt: true, status: true },
       },
       _count: {
         select: { members: true, transactions: true, proposals: true },

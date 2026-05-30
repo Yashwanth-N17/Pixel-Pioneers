@@ -551,6 +551,19 @@ export default function ShgBankingScreen() {
         return;
       }
 
+      const memberInfo = selectedGroup.members?.[0];
+      const status = memberInfo?.status || 'active';
+      const role = memberInfo?.role || 'member';
+
+      // Set group early so we can show pending UI if needed
+      setGroup({ ...selectedGroup, currentUserRole: role, currentUserStatus: status });
+
+      if (status === 'pending') {
+        // Stop here, don't fetch dashboard or other protected endpoints
+        setLoading(false);
+        return;
+      }
+
       const [dashboardRes, txRes, approvalsRes, proposalsRes, membersRes] = await Promise.all([
         endpoints.getShgDashboard(selectedGroup.id),
         endpoints.getShgTransactions(selectedGroup.id),
@@ -973,6 +986,16 @@ export default function ShgBankingScreen() {
                 )}
               </Card>
             </>
+          ) : group.currentUserStatus === 'pending' ? (
+            <Card>
+              <View style={{ alignItems: 'center', paddingVertical: 30 }}>
+                <Ionicons name="time-outline" size={48} color={C.amber500} />
+                <Text style={{ color: C.slate900, fontSize: 18, fontWeight: '900', marginTop: 12 }}>Awaiting Approval</Text>
+                <Text style={{ color: C.slate500, fontSize: 14, textAlign: 'center', marginTop: 6, paddingHorizontal: 20, lineHeight: 22 }}>
+                  Your request to join <Text style={{ fontWeight: '900', color: C.slate900 }}>{group.name}</Text> is currently pending. Please wait for an admin to approve your request.
+                </Text>
+              </View>
+            </Card>
           ) : (
             /* ── Has group: Full dashboard ── */
             <>
