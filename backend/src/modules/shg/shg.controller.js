@@ -21,8 +21,35 @@ const getMyGroups = async (req, res, next) => {
 
 const joinGroup = async (req, res, next) => {
   try {
-    const dashboard = await shgService.joinGroup(req.user.id, req.body.inviteCode);
-    return sendSuccess(res, "Successfully joined SHG group.", dashboard, 201);
+    const result = await shgService.joinGroup(req.user.id, req.body.inviteCode);
+    return sendSuccess(res, "Join request submitted to admin for approval.", result, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getJoinRequests = async (req, res, next) => {
+  try {
+    const requests = await shgService.getJoinRequests(req.user.id, req.params.groupId);
+    return sendSuccess(res, "Join requests fetched successfully.", requests);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const approveJoinRequest = async (req, res, next) => {
+  try {
+    const result = await shgService.approveJoinRequest(req.user.id, req.params.groupId, req.params.memberId);
+    return sendSuccess(res, "Join request approved successfully.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const rejectJoinRequest = async (req, res, next) => {
+  try {
+    const result = await shgService.rejectJoinRequest(req.user.id, req.params.groupId, req.params.memberId);
+    return sendSuccess(res, "Join request rejected successfully.", result);
   } catch (error) {
     next(error);
   }
@@ -186,6 +213,9 @@ module.exports = {
   createGroup,
   getMyGroups,
   joinGroup,
+  getJoinRequests,
+  approveJoinRequest,
+  rejectJoinRequest,
   leaveGroup,
   getDashboard,
   getMembers,

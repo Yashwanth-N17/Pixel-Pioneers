@@ -22,8 +22,8 @@ const requireMember = async (client, groupId, userId) => {
     where: { groupId_userId: { groupId, userId } },
   });
 
-  if (!member) {
-    throw makeError("You are not a member of this SHG group.", 403);
+  if (!member || member.status !== "active") {
+    throw makeError("You are not an active member of this SHG group.", 403);
   }
 
   return member;
@@ -82,10 +82,13 @@ const createGroup = async (userId, payload) => {
         name: payload.name,
         createdById: userId,
         inviteCode,
+        maxMembers: payload.maxMembers || 10,
+        earlyExitFine: payload.earlyExitFine || 0,
         members: {
           create: {
             userId,
             role: "admin",
+            status: "active",
             trustScore: 100,
           },
         },
@@ -196,56 +199,218 @@ const addMember = async (actorId, groupId, payload) => {
 };
 
 const joinGroup = async (userId, inviteCode) => {
-  const group = await prisma.shgGroup.findFirst({
-    where: {
-      OR: [
-        { inviteCode: inviteCode.toUpperCase() },
-        { inviteCode },
-        { id: inviteCode },
-      ]
+  return prisma.$transaction(async (tx) => {
+    const group = await tx.shgGroup.findFirst({
+      where: { inviteCode },
+      include: { members: true },
+    });
+
+    if (!group) {
+      throw makeError("Invalid invite code or group not found.", 404);
     }
-  });
 
-  if (!group) throw makeError("Invalid invite code or group not found.", 404);
+    if (group.members.length >= group.maxMembers) {
+      throw makeError(`This SHG group has reached its member limit of ${group.maxMembers}.`, 403);
+    }
 
-  const existingMember = await prisma.shgMember.findUnique({
-    where: { groupId_userId: { groupId: group.id, userId } }
-  });
+    const existingMember = group.members.find((m) => m.userId === userId);
+    if (existingMember) {
+      if (existingMember.status === "pending") {
+        throw makeError("Your join request is already pending admin approval.", 409);
+      }
+      throw makeError("You are already a member of this group.", 409);
+    }
 
-  if (existingMember) {
-    throw makeError("You are already a member of this SHG group.", 409);
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.shgMember.create({
+    const newMember = await tx.shgMember.create({
       data: {
         groupId: group.id,
         userId,
         role: "member",
-        trustScore: 75,
+        status: "pending",
       },
     });
 
-    await logAudit(tx, group.id, userId, "member_joined", {
-      userId,
+    await logAudit(tx, group.id, userId, "join_request_created", {
       inviteCode,
     });
 
-    // Notify admins
-    const adminIds = await getApprovalUserIds(tx, group.id, userId);
-    await notifyUsers(tx, group.id, adminIds, `A new member joined the SHG group via invite code.`);
+    const admins = group.members.filter(m => m.role === "admin");
+    await notifyUsers(
+      tx,
+      group.id,
+      admins.map(a => a.userId),
+      "A new user has requested to join the SHG group."
+    );
+
+    return group;
+  });
+};
+
+const approveJoinRequest = async (adminId, groupId, targetUserId) => {
+  return prisma.$transaction(async (tx) => {
+    const adminMember = await tx.shgMember.findUnique({
+      where: { groupId_userId: { groupId, userId: adminId } },
+    });
+
+    if (!adminMember || adminMember.role !== "admin") {
+      throw makeError("Only group admins can approve join requests.", 403);
+    }
+
+    const targetMember = await tx.shgMember.findUnique({
+      where: { groupId_userId: { groupId, userId: targetUserId } },
+    });
+
+    if (!targetMember || targetMember.status !== "pending") {
+      throw makeError("Join request not found or already processed.", 404);
+    }
+
+    const group = await tx.shgGroup.findUnique({
+      where: { id: groupId },
+      include: { members: { where: { status: { in: ["active", "pending"] } } } },
+    });
+
+    if (group.members.filter(m => m.status === "active").length >= group.maxMembers) {
+      throw makeError(`This SHG group has reached its active member limit of ${group.maxMembers}.`, 403);
+    }
+
+    const updatedMember = await tx.shgMember.update({
+      where: { id: targetMember.id },
+      data: { status: "active" },
+    });
+
+    await notifyUsers(tx, groupId, [targetUserId], "Your request to join the SHG group has been approved.");
+    
+    return updatedMember;
+  });
+};
+
+const rejectJoinRequest = async (adminId, groupId, targetUserId) => {
+  return prisma.$transaction(async (tx) => {
+    const adminMember = await tx.shgMember.findUnique({
+      where: { groupId_userId: { groupId, userId: adminId } },
+    });
+
+    if (!adminMember || adminMember.role !== "admin") {
+      throw makeError("Only group admins can reject join requests.", 403);
+    }
+
+    const targetMember = await tx.shgMember.findUnique({
+      where: { groupId_userId: { groupId, userId: targetUserId } },
+    });
+
+    if (!targetMember || targetMember.status !== "pending") {
+      throw makeError("Join request not found or already processed.", 404);
+    }
+
+    await tx.shgMember.delete({
+      where: { id: targetMember.id },
+    });
+
+    await notifyUsers(tx, groupId, [targetUserId], "Your request to join the SHG group was rejected.");
+
+    return { message: "Join request rejected successfully." };
+  });
+};
+
+const getJoinRequests = async (adminId, groupId) => {
+  const adminMember = await prisma.shgMember.findUnique({
+    where: { groupId_userId: { groupId, userId: adminId } },
   });
 
-  // Return the full dashboard after joining
-  return getDashboard(userId, group.id);
+  if (!adminMember || adminMember.role !== "admin") {
+    throw makeError("Only group admins can view join requests.", 403);
+  }
+
+  return prisma.shgMember.findMany({
+    where: { groupId, status: "pending" },
+    include: {
+      user: { select: { id: true, name: true, phone: true } },
+    },
+    orderBy: { joinedAt: "desc" },
+  });
 };
 
 const leaveGroup = async (userId, groupId) => {
   return prisma.$transaction(async (tx) => {
     const member = await requireMember(tx, groupId, userId);
+    
+    const group = await tx.shgGroup.findUnique({
+      where: { id: groupId }
+    });
 
-    // If admin, we should perhaps assign admin to someone else or handle differently,
-    // but for now, just delete the member record.
+    // Chit Fund Logic: Check term
+    const termMonths = group.maxMembers;
+    const termEndDate = new Date(group.createdAt);
+    termEndDate.setMonth(termEndDate.getMonth() + termMonths);
+    const isTermActive = new Date() < termEndDate;
+
+    if (isTermActive) {
+      // Check if user has withdrawn money
+      const withdrawals = await tx.shgTransaction.findMany({
+        where: {
+          groupId,
+          createdById: userId,
+          type: "withdrawal",
+          status: "executed",
+        }
+      });
+
+      if (withdrawals.length > 0) {
+        throw makeError(`Cannot leave group before term ends (${termEndDate.toLocaleDateString()}) because you have withdrawn money.`, 403);
+      }
+      
+      // Calculate deposits to see if they can pay the fine
+      const deposits = await tx.shgTransaction.aggregate({
+        where: {
+          groupId,
+          createdById: userId,
+          type: "deposit",
+          status: "executed",
+        },
+        _sum: { amount: true },
+      });
+      const totalDeposited = deposits._sum.amount || 0;
+      
+      if (group.earlyExitFine > 0) {
+        if (totalDeposited < group.earlyExitFine) {
+          throw makeError(`Cannot leave early. You need at least ₹${group.earlyExitFine} in deposits to cover the early exit fine.`, 400);
+        }
+        
+        // Log fine payment
+        await tx.shgTransaction.create({
+          data: {
+            groupId,
+            createdById: userId,
+            type: "deposit", // It stays in the group as a fine collected
+            amount: group.earlyExitFine,
+            status: "executed",
+            description: "Early exit fine forfeited to group.",
+          }
+        });
+      }
+      
+      // Deduct the rest of their money from the group balance as a refund
+      const refundAmount = totalDeposited - group.earlyExitFine;
+      if (refundAmount > 0) {
+        await tx.shgGroup.update({
+          where: { id: groupId },
+          data: { totalBalance: { decrement: refundAmount } },
+        });
+        
+        await tx.shgTransaction.create({
+          data: {
+            groupId,
+            createdById: userId,
+            type: "withdrawal",
+            amount: refundAmount,
+            status: "executed",
+            description: "Refund of deposits upon leaving group (after fine).",
+          }
+        });
+      }
+    }
+
+    // Remove member
     await tx.shgMember.delete({
       where: { id: member.id },
     });
@@ -253,13 +418,14 @@ const leaveGroup = async (userId, groupId) => {
     await logAudit(tx, groupId, userId, "member_left", {
       memberId: member.id,
       userId,
+      appliedFine: isTermActive ? group.earlyExitFine : 0,
     });
 
     // Notify others
     const remainingMembers = await getGroupUserIds(tx, groupId);
     await notifyUsers(tx, groupId, remainingMembers, `A member has left the SHG group.`);
 
-    return { success: true, message: "Successfully left the group." };
+    return { message: "Successfully left the group." };
   });
 };
 
@@ -580,6 +746,7 @@ const removeMember = async (actorId, groupId, targetUserId) => {
 module.exports = {
   createGroup,
   getMyGroups,
+  joinGroup,
   getDashboard,
   getMembers,
   addMember,

@@ -56,3 +56,14 @@ class FinancialAnalysisRequest(BaseModel):
         if details[self.user_occupation_profile] is None:
             raise ValueError(f"{self.user_occupation_profile} details are required")
         return self
+
+
+class SmsMessage(BaseModel):
+    id: str
+    sender: str
+    body: str
+    timestamp: Optional[int] = None
+
+
+class SmsAnalysisRequest(BaseModel):
+    messages: list[SmsMessage] = Field(..., max_items=100)

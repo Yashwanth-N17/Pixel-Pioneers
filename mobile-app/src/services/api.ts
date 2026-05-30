@@ -34,7 +34,7 @@ export const api: AxiosInstance = axios.create({
 
 /** Separate voice micro-service (whisper / tts) */
 export const voiceApi: AxiosInstance = axios.create({
-  baseURL: VOICE,
+  baseURL: VOICE.replace('/api', ''),
   timeout: 20000,
 });
 
@@ -198,6 +198,9 @@ export const endpoints = {
   deleteLedgerEntry: (id: string) =>
     api.delete(`/transactions/${id}`),
 
+  // ── Loans ───────────────────────────────
+  getLoanHistory: () => api.get('/loans/history'),
+
   // ── Dashboard ───────────────────────────
   getDashboard: () => api.get('/dashboard'),
 
@@ -205,12 +208,23 @@ export const endpoints = {
   createShgGroup: (body: {
     name: string;
     approvalThreshold?: number;
+    maxMembers?: number;
+    earlyExitFine?: number;
   }) => api.post('/shg/groups', body),
 
   joinShgGroup: (body: {
     groupId?: string;
     inviteCode?: string;
   }) => api.post('/shg/groups/join', body),
+
+  getShgJoinRequests: (groupId: string) =>
+    api.get(`/shg/groups/${groupId}/join-requests`),
+
+  approveShgJoinRequest: (groupId: string, memberId: string) =>
+    api.post(`/shg/groups/${groupId}/join-requests/${memberId}/approve`),
+
+  rejectShgJoinRequest: (groupId: string, memberId: string) =>
+    api.post(`/shg/groups/${groupId}/join-requests/${memberId}/reject`),
 
   leaveShgGroup: (groupId: string) => 
     api.post(`/shg/groups/${groupId}/leave`),
@@ -266,6 +280,9 @@ export const endpoints = {
     api.get(`/shg/groups/${groupId}/audit-logs`),
 
   // ── AI ──────────────────────────────────
+  analyzeSms: (messages: any[]) =>
+    api.post('/ai/analyze-sms', { messages }),
+
   financialGuidance: (query: string, language: string) =>
     api.post('/ai/financial-guidance', { query, language }),
 

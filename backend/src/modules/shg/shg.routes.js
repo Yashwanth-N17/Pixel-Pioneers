@@ -20,6 +20,9 @@ router.use(authMiddleware);
 
 router.post("/groups", createGroupValidation, validate, shgController.createGroup);
 router.post("/groups/join", joinGroupValidation, validate, shgController.joinGroup);
+router.get("/groups/:groupId/join-requests", groupIdParam, validate, shgController.getJoinRequests);
+router.post("/groups/:groupId/join-requests/:memberId/approve", groupIdParam, validate, shgController.approveJoinRequest);
+router.post("/groups/:groupId/join-requests/:memberId/reject", groupIdParam, validate, shgController.rejectJoinRequest);
 router.post("/groups/:groupId/leave", groupIdParam, validate, shgController.leaveGroup);
 router.get("/groups/my", shgController.getMyGroups);
 router.get("/groups/:groupId/dashboard", groupIdParam, validate, shgController.getDashboard);

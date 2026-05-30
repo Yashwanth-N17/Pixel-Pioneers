@@ -102,6 +102,12 @@ enum ShgApprovalStatus {
   rejected
 }
 
+enum ShgMemberStatus {
+  pending
+  active
+  exited
+}
+
 enum ShgProposalStatus {
   open
   passed
@@ -469,13 +475,15 @@ model Payment {
 }
 
 model ShgGroup {
-  id           String           @id @default(uuid())
-  name         String
-  createdById  String
-  inviteCode   String?          @unique
-  totalBalance Float            @default(0)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id            String           @id @default(uuid())
+  name          String
+  createdById   String
+  inviteCode    String?          @unique
+  totalBalance  Float            @default(0)
+  maxMembers    Int              @default(10) // Also dictates the term in months
+  earlyExitFine Float            @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   createdBy     User              @relation("ShgGroupCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   members       ShgMember[]
@@ -489,12 +497,13 @@ model ShgGroup {
 }
 
 model ShgMember {
-  id         String   @id @default(uuid())
+  id         String          @id @default(uuid())
   groupId    String
   userId     String
-  role       ShgRole  @default(member)
-  trustScore Float    @default(0)
-  joinedAt   DateTime @default(now())
+  role       ShgRole         @default(member)
+  status     ShgMemberStatus @default(active)
+  trustScore Float           @default(0)
+  joinedAt   DateTime        @default(now())
 
   group ShgGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User     @relation(fields: [userId], references: [id], onDelete: Cascade)

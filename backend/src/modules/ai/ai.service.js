@@ -109,4 +109,35 @@ const buildAIServiceError = (err) => {
 
 // analyzeLoan removed — now handled by loanAnalysis.service.js
 
-module.exports = { getFinancialGuidance, detectScam, checkAIHealth };
+/**
+ * Send a batch of SMS messages to the AI service for scam analysis
+ */
+const analyzeSmsBatch = async (userId, { messages }) => {
+  let aiResponse;
+
+  try {
+    // Note: AI_BASE_URL points to something like http://10.60.205.32:8000
+    // The python service has the route /ai-analysis/analyze-sms
+    const response = await aiClient.post("/ai-analysis/analyze-sms", { messages });
+    aiResponse = response.data;
+  } catch (err) {
+    logger.error(`AI service error (analyze-sms): ${err.message}`);
+    throw buildAIServiceError(err);
+  }
+
+  // We can choose not to persist every single SMS check or we can save it as an AIReport
+  // For now, we'll save it for audit purposes.
+  const report = await prisma.aIReport.create({
+    data: {
+      userId,
+      reportType: "sms_analysis",
+      inputData: { messageCount: messages?.length || 0 },
+      aiResponse,
+    },
+  });
+
+  return { reportId: report.id, result: aiResponse };
+};
+
+
+module.exports = { getFinancialGuidance, detectScam, checkAIHealth, analyzeSmsBatch };

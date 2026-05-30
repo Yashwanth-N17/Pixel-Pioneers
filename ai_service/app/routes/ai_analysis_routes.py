@@ -98,3 +98,12 @@ def loan_analysis(request: LoanAnalysisRequest):
 @router.post("/analyze")
 def analyze_signup(request: SignupAnalysisRequest):
     return analyze_signup_profile(request.model_dump())
+
+
+from app.schemas.ai_analysis_schema import SmsAnalysisRequest
+from app.analyzers.sms_analyzer import analyze_sms_batch
+
+@router.post("/analyze-sms")
+async def analyze_sms(request: SmsAnalysisRequest):
+    analysis = await analyze_sms_batch(request)
+    return success_response(analysis, "SMS analysis completed")
