@@ -37,6 +37,12 @@ router.post(
   aiController.scamDetection
 );
 
+// POST /api/ai/analyze-sms
+router.post(
+  "/analyze-sms",
+  aiController.analyzeSms
+);
+
 // POST /api/ai/loan-analysis — upgraded to ArthScore engine
 // IMPORTANT: history and :id routes must be defined BEFORE the POST
 // to avoid route conflicts

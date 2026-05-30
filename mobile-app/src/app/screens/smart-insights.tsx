@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, PermissionsAndroid, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, PermissionsAndroid, Platform, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import SmsAndroid from 'react-native-get-sms-android';
 
 import { endpoints } from '../../services/api';
-import C from '../../constants/colors';
+import { C } from '../../constants/colors';
 
 const Card = ({ children, style = {} }: any) => (
   <View style={[{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 }, style]}>
@@ -20,6 +20,12 @@ export default function SmartInsightsScreen() {
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState<any[]>([]);
   const [scanned, setScanned] = useState(false);
+  const [manualSms, setManualSms] = useState('');
+  const [manualLoading, setManualLoading] = useState(false);
+
+  useEffect(() => {
+    fetchAndAnalyzeSms();
+  }, []);
 
   const requestSmsPermission = async () => {
     if (Platform.OS !== 'android') {
@@ -78,44 +84,94 @@ export default function SmartInsightsScreen() {
               body: msg.body,
               timestamp: msg.date,
             }));
-
-            // Send to AI Service
-            const response = await endpoints.analyzeSms(messages);
-            const data = response.data?.data?.insights || response.data?.insights || [];
             
-            // Map the insights back to the original messages for display
-            const combined = data.map((insight: any) => {
-              const original = messages.find((m: any) => m.id === insight.id);
-              return {
-                ...insight,
-                sender: original?.sender || 'Unknown',
-                body: original?.body || '',
-              };
-            });
-
-            // Filter out safe messages or sort them so scams appear first
-            const sorted = combined.sort((a: any, b: any) => {
-              if (a.status === 'SCAM') return -1;
-              if (b.status === 'SCAM') return 1;
-              if (a.status === 'WARNING') return -1;
-              if (b.status === 'WARNING') return 1;
-              return 0;
-            });
-
-            setInsights(sorted);
-            setScanned(true);
+            await processMessages(messages);
           } catch (e) {
             console.error(e);
             Alert.alert('Error', 'Failed to analyze SMS messages.');
-          } finally {
             setLoading(false);
           }
         }
       );
     } catch (error) {
-      console.error(error);
+      console.warn("Native SMS read failed, falling back to mock data", error);
+      // Fallback to mock data for Expo Go
+      const mockMessages = [
+        { id: "1", sender: "VK-HDFCBK", body: "Rs 5000 withdrawn from HDFC a/c **1234 on 12-May. If not done by you call 18002026161.", timestamp: Date.now() },
+        { id: "2", sender: "JD-JIOKBC", body: "Congratulations! Your mobile number has won Rs 25,00,000 in KBC Jio Lucky Draw. Call Mr. Sharma immediately on 9876543210 to claim your prize.", timestamp: Date.now() - 3600000 },
+        { id: "3", sender: "MD-EPFGOV", body: "Dear Member, Your KYC details need immediate update to prevent account deactivation. Click here: http://bit.ly/kyc-update-epfo", timestamp: Date.now() - 7200000 },
+        { id: "4", sender: "RM-MYNTRA", body: "Your order #12345 has been shipped and will be delivered by tomorrow. Track here: myntra.com/track", timestamp: Date.now() - 86400000 },
+        { id: "5", sender: "AD-AXISBK", body: "Dear Customer, 439812 is your OTP for transaction of Rs 1500 at Amazon. Do not share it with anyone.", timestamp: Date.now() - 172800000 },
+      ];
+      Alert.alert("Simulated Mode", "Since you are in Expo Go without native SMS permissions, we are using 5 simulated test messages.");
+      await processMessages(mockMessages);
+    }
+  };
+
+  const processMessages = async (messages: any[]) => {
+    try {
+      // Send to AI Service
+      const response = await endpoints.analyzeSms(messages);
+      const data = response.data?.data?.insights || response.data?.insights || [];
+      
+      // Map the insights back to the original messages for display
+      const combined = data.map((insight: any) => {
+        const original = messages.find((m: any) => m.id === insight.id);
+        return {
+          ...insight,
+          sender: original?.sender || 'Unknown',
+          body: original?.body || '',
+        };
+      });
+
+      // Filter out safe messages or sort them so scams appear first
+      const sorted = combined.sort((a: any, b: any) => {
+        if (a.status === 'SCAM') return -1;
+        if (b.status === 'SCAM') return 1;
+        if (a.status === 'WARNING') return -1;
+        if (b.status === 'WARNING') return 1;
+        return 0;
+      });
+
+      setInsights(sorted);
+      setScanned(true);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Failed to analyze SMS messages.');
+    } finally {
       setLoading(false);
-      Alert.alert('Error', 'An unexpected error occurred.');
+    }
+  };
+
+  const analyzeManualSms = async () => {
+    if (!manualSms.trim()) {
+      Alert.alert('Empty', 'Please paste an SMS message to analyze.');
+      return;
+    }
+    setManualLoading(true);
+    try {
+      const messages = [{ id: "manual-" + Date.now(), sender: "Pasted Message", body: manualSms, timestamp: Date.now() }];
+      const response = await endpoints.analyzeSms(messages);
+      const data = response.data?.data?.insights || response.data?.insights || [];
+      
+      if (data.length > 0) {
+        const insight = data[0];
+        const resultItem = {
+          ...insight,
+          sender: "Pasted Message",
+          body: manualSms,
+        };
+        // Prepend to insights so it shows at the top
+        setInsights(prev => [resultItem, ...prev]);
+        setScanned(true);
+        setManualSms('');
+        Alert.alert('Analysis Complete', `This message is flagged as: ${insight.status}`);
+      }
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Failed to analyze pasted SMS.');
+    } finally {
+      setManualLoading(false);
     }
   };
 
@@ -159,8 +215,35 @@ export default function SmartInsightsScreen() {
               <ActivityIndicator color={C.blue600} />
             ) : (
               <>
-                <Ionicons name="scan-outline" size={20} color={C.blue600} style={{ marginRight: 8 }} />
-                <Text style={{ color: C.blue600, fontWeight: '900', fontSize: 16 }}>Scan Recent SMS</Text>
+                <Ionicons name="refresh-outline" size={20} color={C.blue600} style={{ marginRight: 8 }} />
+                <Text style={{ color: C.blue600, fontWeight: '900', fontSize: 16 }}>Rescan Recent SMS</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </Card>
+
+        {/* Manual Input Section */}
+        <Card style={{ backgroundColor: '#fff', padding: 20, borderWidth: 1, borderColor: C.slate200 }}>
+          <Text style={{ color: C.slate900, fontSize: 16, fontWeight: '900', marginBottom: 8 }}>Or Paste a Suspicious SMS</Text>
+          <TextInput
+            value={manualSms}
+            onChangeText={setManualSms}
+            placeholder="Paste message here..."
+            placeholderTextColor={C.slate400}
+            multiline
+            style={{ backgroundColor: C.slate50, borderRadius: 12, padding: 14, minHeight: 80, textAlignVertical: 'top', color: C.slate900, marginBottom: 12, borderWidth: 1, borderColor: C.slate200 }}
+          />
+          <TouchableOpacity
+            onPress={analyzeManualSms}
+            disabled={manualLoading}
+            style={{ backgroundColor: C.emerald600, borderRadius: 12, paddingVertical: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+          >
+            {manualLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="search-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Analyze Text</Text>
               </>
             )}
           </TouchableOpacity>

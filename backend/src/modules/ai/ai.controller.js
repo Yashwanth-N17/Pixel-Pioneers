@@ -140,6 +140,16 @@ const seasonalIncome = async (req, res, next) => {
   }
 };
 
+const analyzeSms = async (req, res, next) => {
+  try {
+    const { messages } = req.body;
+    const result = await aiService.analyzeSmsBatch(req.user.id, { messages });
+    return sendSuccess(res, "SMS analysis completed.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   financialGuidance,
   scamDetection,
@@ -153,4 +163,5 @@ module.exports = {
   goldPlan,
   cashflowForecast,
   seasonalIncome,
+  analyzeSms,
 };

@@ -34,7 +34,7 @@ export const api: AxiosInstance = axios.create({
 
 /** Separate voice micro-service (whisper / tts) */
 export const voiceApi: AxiosInstance = axios.create({
-  baseURL: VOICE,
+  baseURL: VOICE.replace('/api', ''),
   timeout: 20000,
 });
 
@@ -198,6 +198,9 @@ export const endpoints = {
   deleteLedgerEntry: (id: string) =>
     api.delete(`/transactions/${id}`),
 
+  // ── Loans ───────────────────────────────
+  getLoanHistory: () => api.get('/loans/history'),
+
   // ── Dashboard ───────────────────────────
   getDashboard: () => api.get('/dashboard'),
 
@@ -278,7 +281,7 @@ export const endpoints = {
 
   // ── AI ──────────────────────────────────
   analyzeSms: (messages: any[]) =>
-    voiceApi.post('/ai-analysis/analyze-sms', { messages }),
+    api.post('/ai/analyze-sms', { messages }),
 
   financialGuidance: (query: string, language: string) =>
     api.post('/ai/financial-guidance', { query, language }),
