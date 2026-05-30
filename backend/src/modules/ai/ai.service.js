@@ -130,7 +130,7 @@ const analyzeSmsBatch = async (userId, { messages }) => {
   const report = await prisma.aIReport.create({
     data: {
       userId,
-      reportType: "sms_analysis",
+      reportType: "scam_detection",
       inputData: { messageCount: messages?.length || 0 },
       aiResponse,
     },
