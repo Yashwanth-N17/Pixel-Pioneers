@@ -573,7 +573,7 @@ export default function ShgBankingScreen() {
       ]);
 
       let joinReqRes: any = { data: { data: [] } };
-      if (selectedGroup.currentUserRole === 'admin') {
+      if (role === 'admin') {
         try {
           joinReqRes = await endpoints.getShgJoinRequests(selectedGroup.id);
         } catch (e) {
@@ -585,6 +585,8 @@ export default function ShgBankingScreen() {
       setGroup({
         ...selectedGroup,
         ...dashboard.group,
+        currentUserRole: role,
+        currentUserStatus: status,
         inviteCode: dashboard.group?.inviteCode || selectedGroup.inviteCode,
       });
 
