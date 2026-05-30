@@ -217,17 +217,11 @@ export const endpoints = {
     inviteCode?: string;
   }) => api.post('/shg/groups/join', body),
 
-  getShgJoinRequests: (groupId: string) =>
-    api.get(`/shg/groups/${groupId}/join-requests`),
-
-  approveShgJoinRequest: (groupId: string, memberId: string) =>
-    api.post(`/shg/groups/${groupId}/join-requests/${memberId}/approve`),
-
-  rejectShgJoinRequest: (groupId: string, memberId: string) =>
-    api.post(`/shg/groups/${groupId}/join-requests/${memberId}/reject`),
-
-  leaveShgGroup: (groupId: string) => 
-    api.post(`/shg/groups/${groupId}/leave`),
+  getShgJoinRequests: (groupId: string) => api.get(`/shg/groups/${groupId}/join-requests`),
+  approveShgJoinRequest: (groupId: string, memberId: string) => api.post(`/shg/groups/${groupId}/join-requests/${memberId}/approve`),
+  rejectShgJoinRequest: (groupId: string, memberId: string) => api.post(`/shg/groups/${groupId}/join-requests/${memberId}/reject`),
+  leaveShgGroup: (groupId: string) => api.post(`/shg/groups/${groupId}/leave`),
+  getGroupByInvite: (inviteCode: string) => api.get(`/shg/groups/invite/${inviteCode}`),
 
   getMyShgGroups: () => api.get('/shg/groups/my'),
 

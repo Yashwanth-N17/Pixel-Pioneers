@@ -198,6 +198,29 @@ const addMember = async (actorId, groupId, payload) => {
   });
 };
 
+const getGroupByInvite = async (inviteCode) => {
+  const group = await prisma.shgGroup.findFirst({
+    where: { inviteCode },
+    select: {
+      id: true,
+      name: true,
+      maxMembers: true,
+      earlyExitFine: true,
+      createdAt: true,
+      description: true,
+      _count: {
+        select: { members: { where: { status: "active" } } }
+      }
+    }
+  });
+
+  if (!group) {
+    throw makeError("Invalid invite code or group not found.", 404);
+  }
+
+  return group;
+};
+
 const joinGroup = async (userId, inviteCode) => {
   return prisma.$transaction(async (tx) => {
     const group = await tx.shgGroup.findFirst({
@@ -750,7 +773,7 @@ module.exports = {
   getDashboard,
   getMembers,
   addMember,
-  joinGroup,
+  getGroupByInvite,
   leaveGroup,
   getTransactions,
   createTransaction,

@@ -19,6 +19,7 @@ const {
 router.use(authMiddleware);
 
 router.post("/groups", createGroupValidation, validate, shgController.createGroup);
+router.get("/groups/invite/:inviteCode", shgController.getGroupByInvite);
 router.post("/groups/join", joinGroupValidation, validate, shgController.joinGroup);
 router.get("/groups/:groupId/join-requests", groupIdParam, validate, shgController.getJoinRequests);
 router.post("/groups/:groupId/join-requests/:memberId/approve", groupIdParam, validate, shgController.approveJoinRequest);

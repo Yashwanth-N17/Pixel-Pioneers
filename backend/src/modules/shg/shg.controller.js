@@ -19,6 +19,15 @@ const getMyGroups = async (req, res, next) => {
   }
 };
 
+const getGroupByInvite = async (req, res, next) => {
+  try {
+    const group = await shgService.getGroupByInvite(req.params.inviteCode);
+    return sendSuccess(res, "Group info fetched successfully.", group);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const joinGroup = async (req, res, next) => {
   try {
     const result = await shgService.joinGroup(req.user.id, req.body.inviteCode);
@@ -212,6 +221,7 @@ const getAuditLogs = async (req, res, next) => {
 module.exports = {
   createGroup,
   getMyGroups,
+  getGroupByInvite,
   joinGroup,
   getJoinRequests,
   approveJoinRequest,

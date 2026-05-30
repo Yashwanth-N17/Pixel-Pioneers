@@ -16,13 +16,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Svg, Rect } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import qrcode from 'qrcode-generator';
 
 import { C } from '../../constants/colors';
 import { endpoints } from '../../services/api';
+import { TRANSLATIONS } from '../../constants/translations';
+import { useStore } from '../../store';
 
 // ─────────────────────────────────────────
 // Types
@@ -410,6 +412,83 @@ function QRModal({ visible, inviteCode, groupName, onClose }: {
 }
 
 // ─────────────────────────────────────────
+// Pre-Join Modal
+// ─────────────────────────────────────────
+function PreJoinModal({
+  visible,
+  groupData,
+  lang,
+  onCancel,
+  onConfirm
+}: {
+  visible: boolean;
+  groupData: any;
+  lang: any;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!groupData) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onCancel}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24 }}>
+          
+          <View style={{ width: 40, height: 4, backgroundColor: C.slate200, borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+          
+          <Text style={{ fontSize: 22, fontWeight: '900', color: C.slate900, marginBottom: 4 }}>
+            {lang.shgJoinTermsTitle || 'Group Rules & Terms'}
+          </Text>
+          <Text style={{ fontSize: 16, color: C.slate500, marginBottom: 20 }}>
+            {groupData.name}
+          </Text>
+
+          <View style={{ backgroundColor: C.slate50, borderRadius: 16, padding: 16, marginBottom: 24, gap: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="calendar-outline" size={20} color={C.emerald600} />
+                <Text style={{ color: C.slate700, fontWeight: '700' }}>{lang.shgTermPeriod || 'Term Period'}</Text>
+              </View>
+              <Text style={{ color: C.slate900, fontWeight: '900' }}>{groupData.maxMembers} months</Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="warning-outline" size={20} color={C.rose600} />
+                <Text style={{ color: C.slate700, fontWeight: '700' }}>{lang.shgEarlyExitFine || 'Early Exit Fine'}</Text>
+              </View>
+              <Text style={{ color: C.rose600, fontWeight: '900' }}>₹{groupData.earlyExitFine || 0}</Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="people-outline" size={20} color={C.blue600} />
+                <Text style={{ color: C.slate700, fontWeight: '700' }}>{lang.shgMaxMembers || 'Group Size'}</Text>
+              </View>
+              <Text style={{ color: C.slate900, fontWeight: '900' }}>{groupData._count?.members || 1} / {groupData.maxMembers}</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            onPress={onConfirm}
+            style={{ backgroundColor: C.emerald600, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
+              {lang.shgAcceptJoin || 'Accept & Join Group'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onCancel} style={{ paddingVertical: 12, alignItems: 'center' }}>
+            <Text style={{ color: C.slate500, fontWeight: '700' }}>{lang.shgCancel || 'Cancel'}</Text>
+          </TouchableOpacity>
+
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────
 export default function ShgBankingScreen() {
@@ -444,6 +523,11 @@ export default function ShgBankingScreen() {
   const [showQR, setShowQR] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [joinMethod, setJoinMethod] = useState<'code' | 'qr'>('code');
+
+  const [preJoinGroup, setPreJoinGroup] = useState<any>(null);
+
+  const user = useStore(s => s.user);
+  const lang = TRANSLATIONS[user?.language || 'English'];
 
   const pendingApprovals = useMemo(
     () => approvals.filter((a) => a.status === 'pending').length,
@@ -515,7 +599,11 @@ export default function ShgBankingScreen() {
     }
   }, []);
 
-  useEffect(() => { loadShg(); }, [loadShg]);
+  useFocusEffect(
+    useCallback(() => {
+      loadShg();
+    }, [loadShg])
+  );
 
   const refresh = async () => {
     setRefreshing(true);
@@ -547,18 +635,31 @@ export default function ShgBankingScreen() {
     }
   };
 
-  const joinGroup = async () => {
-    if (!inviteCode.trim()) {
+  const initiateJoinGroup = async (code: string) => {
+    if (!code.trim()) {
       Alert.alert('Code needed', 'Enter the invite code shown on the admin\'s QR.');
       return;
     }
     try {
-      await endpoints.joinShgGroup({ inviteCode: inviteCode.trim().toUpperCase() });
-      setInviteCode('');
-      Alert.alert('✅ Request Sent!', 'Your request to join has been sent to the admin for approval.');
-      // Don't reload immediately because they might not have access yet.
+      setLoading(true);
+      const res = await endpoints.getGroupByInvite(code.trim().toUpperCase());
+      setPreJoinGroup(res.data?.data);
+      setLoading(false);
     } catch (error: any) {
+      setLoading(false);
       Alert.alert('Error', error?.response?.data?.message || 'Invalid invite code. Please try again.');
+    }
+  };
+
+  const confirmJoinGroup = async () => {
+    if (!preJoinGroup?.inviteCode) return;
+    try {
+      await endpoints.joinShgGroup({ inviteCode: preJoinGroup.inviteCode });
+      setInviteCode('');
+      setPreJoinGroup(null);
+      Alert.alert('✅ Request Sent!', 'Your request to join has been sent to the admin for approval.');
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.message || 'Failed to join group.');
     }
   };
 
@@ -725,19 +826,17 @@ export default function ShgBankingScreen() {
         onScanned={(scannedCode) => {
           setShowScanner(false);
           setInviteCode(scannedCode.toUpperCase());
-          // Auto-join after scan
-          setTimeout(() => {
-            endpoints.joinShgGroup({ inviteCode: scannedCode.toUpperCase() })
-              .then(() => {
-                setInviteCode('');
-                Alert.alert('✅ Joined!', 'You are now a member of the SHG group.');
-                loadShg();
-              })
-              .catch((err: any) => {
-                Alert.alert('Error', err?.response?.data?.message || 'Invalid QR code.');
-              });
-          }, 300);
+          initiateJoinGroup(scannedCode.toUpperCase());
         }}
+      />
+
+      {/* Pre Join Modal */}
+      <PreJoinModal
+        visible={!!preJoinGroup}
+        groupData={preJoinGroup}
+        lang={lang}
+        onCancel={() => setPreJoinGroup(null)}
+        onConfirm={confirmJoinGroup}
       />
 
       <ScrollView
@@ -850,7 +949,7 @@ export default function ShgBankingScreen() {
                       maxLength={10}
                       style={{ backgroundColor: C.slate50, borderWidth: 1, borderColor: C.slate200, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: C.slate900, marginBottom: 12, fontWeight: '900', fontSize: 22, letterSpacing: 6, textAlign: 'center' }}
                     />
-                    <TouchableOpacity onPress={joinGroup} style={{ backgroundColor: C.slate900, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => initiateJoinGroup(inviteCode)} style={{ backgroundColor: C.slate900, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                       <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Join Group</Text>
                     </TouchableOpacity>
                   </>
