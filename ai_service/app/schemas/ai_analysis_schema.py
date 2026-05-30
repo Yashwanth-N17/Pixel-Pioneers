@@ -67,3 +67,4 @@ class SmsMessage(BaseModel):
 
 class SmsAnalysisRequest(BaseModel):
     messages: list[SmsMessage] = Field(..., max_items=100)
+    language: Optional[str] = "en"

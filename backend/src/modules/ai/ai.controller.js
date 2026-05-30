@@ -142,8 +142,8 @@ const seasonalIncome = async (req, res, next) => {
 
 const analyzeSms = async (req, res, next) => {
   try {
-    const { messages } = req.body;
-    const result = await aiService.analyzeSmsBatch(req.user.id, { messages });
+    const { messages, language } = req.body;
+    const result = await aiService.analyzeSmsBatch(req.user.id, { messages, language });
     return sendSuccess(res, "SMS analysis completed.", result);
   } catch (error) {
     next(error);

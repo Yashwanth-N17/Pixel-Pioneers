@@ -67,6 +67,8 @@ You MUST output ONLY valid JSON in this exact format:
   ]
 }}
 
+CRITICAL REQUIREMENT: The "reason" field MUST be written in the following language: {request.language}. If it is Hindi or Kannada etc., write the explanation in that script (e.g. Hindi in Devanagari).
+
 Here are the messages to analyze:
 {messages_str}
 """

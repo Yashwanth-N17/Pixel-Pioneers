@@ -112,13 +112,13 @@ const buildAIServiceError = (err) => {
 /**
  * Send a batch of SMS messages to the AI service for scam analysis
  */
-const analyzeSmsBatch = async (userId, { messages }) => {
+const analyzeSmsBatch = async (userId, { messages, language }) => {
   let aiResponse;
 
   try {
     // Note: AI_BASE_URL points to something like http://10.60.205.32:8000
     // The python service has the route /ai-analysis/analyze-sms
-    const response = await aiClient.post("/ai-analysis/analyze-sms", { messages });
+    const response = await aiClient.post("/ai-analysis/analyze-sms", { messages, language });
     aiResponse = response.data;
   } catch (err) {
     logger.error(`AI service error (analyze-sms): ${err.message}`);

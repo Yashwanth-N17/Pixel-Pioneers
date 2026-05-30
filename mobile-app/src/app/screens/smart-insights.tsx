@@ -8,6 +8,7 @@ import SmsAndroid from 'react-native-get-sms-android';
 
 import { endpoints } from '../../services/api';
 import { C } from '../../constants/colors';
+import { useStore } from '../../store';
 
 const Card = ({ children, style = {} }: any) => (
   <View style={[{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 }, style]}>
@@ -22,6 +23,7 @@ export default function SmartInsightsScreen() {
   const [scanned, setScanned] = useState(false);
   const [manualSms, setManualSms] = useState('');
   const [manualLoading, setManualLoading] = useState(false);
+  const userLanguage = useStore((s: any) => s.user?.language) || 'en';
 
   useEffect(() => {
     fetchAndAnalyzeSms();
@@ -50,10 +52,44 @@ export default function SmartInsightsScreen() {
     }
   };
 
+  const loadMockData = async () => {
+    setLoading(true);
+    setInsights([]);
+    setScanned(false);
+    console.warn("Falling back to mock data");
+    const mockMessages = [
+      { id: "1", sender: "VK-HDFCBK", body: "Rs 5000 withdrawn from HDFC a/c **1234 on 12-May. If not done by you call 18002026161.", timestamp: Date.now() },
+      { id: "2", sender: "JD-JIOKBC", body: "Congratulations! Your mobile number has won Rs 25,00,000 in KBC Jio Lucky Draw. Call Mr. Sharma immediately on 9876543210 to claim your prize.", timestamp: Date.now() - 3600000 },
+      { id: "3", sender: "MD-EPFGOV", body: "Dear Member, Your KYC details need immediate update to prevent account deactivation. Click here: http://bit.ly/kyc-update-epfo", timestamp: Date.now() - 7200000 },
+      { id: "4", sender: "RM-MYNTRA", body: "Your order #12345 has been shipped and will be delivered by tomorrow. Track here: myntra.com/track", timestamp: Date.now() - 86400000 },
+      { id: "5", sender: "AD-AXISBK", body: "Dear Customer, 439812 is your OTP for transaction of Rs 1500 at Amazon. Do not share it with anyone.", timestamp: Date.now() - 172800000 },
+    ];
+    
+    // Hardcoded instant mock insights to save API calls in Expo Go
+    const getReason = (en: string, hi: string, kn: string) => {
+      if (userLanguage === 'hi') return hi;
+      if (userLanguage === 'kn') return kn;
+      return en;
+    };
+
+    const mockInsightsData = [
+      { id: "2", status: "SCAM", sender: "JD-JIOKBC", body: mockMessages[1].body, reason: getReason("Fake lottery scam promising money.", "पैसे का वादा करने वाला नकली लॉटरी घोटाला।", "ಹಣದ ಭರವಸೆ ನೀಡುವ ನಕಲಿ ಲಾಟರಿ ಹಗರಣ.") },
+      { id: "3", status: "SCAM", sender: "MD-EPFGOV", body: mockMessages[2].body, reason: getReason("Phishing link pretending to be KYC update.", "KYC अपडेट का दिखावा करने वाला फिशिंग लिंक।", "KYC ಅಪ್ಡೇಟ್ ಎಂದು ನಟಿಸುವ ಫಿಶಿಂಗ್ ಲಿಂಕ್.") },
+      { id: "5", status: "WARNING", sender: "AD-AXISBK", body: mockMessages[4].body, reason: getReason("Bank OTP. Do not share it with anyone.", "बैंक OTP। इसे किसी के साथ शेयर न करें।", "ಬ್ಯಾಂಕ್ OTP. ಇದನ್ನು ಯಾರೊಂದಿಗೂ ಹಂಚಿಕೊಳ್ಳಬೇಡಿ.") },
+      { id: "1", status: "SAFE", sender: "VK-HDFCBK", body: mockMessages[0].body, reason: getReason("Standard bank withdrawal alert.", "सामान्य बैंक निकासी अलर्ट।", "ಸಾಮಾನ್ಯ ಬ್ಯಾಂಕ್ ಹಿಂತೆಗೆದುಕೊಳ್ಳುವಿಕೆ ಎಚ್ಚರಿಕೆ.") },
+      { id: "4", status: "SAFE", sender: "RM-MYNTRA", body: mockMessages[3].body, reason: getReason("Standard shopping delivery update.", "सामान्य शॉपिंग डिलीवरी अपडेट।", "ಸಾಮಾನ್ಯ ಶಾಪಿಂಗ್ ವಿತರಣೆ ಅಪ್ಡೇಟ್.") },
+    ];
+
+    setInsights(mockInsightsData);
+    setScanned(true);
+    setLoading(false);
+    Alert.alert("Simulated Mode", "Since you are in Expo Go without native SMS permissions, we are instantly showing 5 simulated test messages.");
+  };
+
   const fetchAndAnalyzeSms = async () => {
     const hasPermission = await requestSmsPermission();
     if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Cannot read SMS without permission.');
+      await loadMockData();
       return;
     }
 
@@ -94,25 +130,16 @@ export default function SmartInsightsScreen() {
         }
       );
     } catch (error) {
-      console.warn("Native SMS read failed, falling back to mock data", error);
-      // Fallback to mock data for Expo Go
-      const mockMessages = [
-        { id: "1", sender: "VK-HDFCBK", body: "Rs 5000 withdrawn from HDFC a/c **1234 on 12-May. If not done by you call 18002026161.", timestamp: Date.now() },
-        { id: "2", sender: "JD-JIOKBC", body: "Congratulations! Your mobile number has won Rs 25,00,000 in KBC Jio Lucky Draw. Call Mr. Sharma immediately on 9876543210 to claim your prize.", timestamp: Date.now() - 3600000 },
-        { id: "3", sender: "MD-EPFGOV", body: "Dear Member, Your KYC details need immediate update to prevent account deactivation. Click here: http://bit.ly/kyc-update-epfo", timestamp: Date.now() - 7200000 },
-        { id: "4", sender: "RM-MYNTRA", body: "Your order #12345 has been shipped and will be delivered by tomorrow. Track here: myntra.com/track", timestamp: Date.now() - 86400000 },
-        { id: "5", sender: "AD-AXISBK", body: "Dear Customer, 439812 is your OTP for transaction of Rs 1500 at Amazon. Do not share it with anyone.", timestamp: Date.now() - 172800000 },
-      ];
-      Alert.alert("Simulated Mode", "Since you are in Expo Go without native SMS permissions, we are using 5 simulated test messages.");
-      await processMessages(mockMessages);
+      console.warn("Native SMS read failed", error);
+      await loadMockData();
     }
   };
 
   const processMessages = async (messages: any[]) => {
     try {
       // Send to AI Service
-      const response = await endpoints.analyzeSms(messages);
-      const data = response.data?.data?.insights || response.data?.insights || [];
+      const response = await endpoints.analyzeSms(messages, userLanguage);
+      const data = response.data?.data?.result?.insights || response.data?.data?.insights || response.data?.insights || [];
       
       // Map the insights back to the original messages for display
       const combined = data.map((insight: any) => {
@@ -151,8 +178,8 @@ export default function SmartInsightsScreen() {
     setManualLoading(true);
     try {
       const messages = [{ id: "manual-" + Date.now(), sender: "Pasted Message", body: manualSms, timestamp: Date.now() }];
-      const response = await endpoints.analyzeSms(messages);
-      const data = response.data?.data?.insights || response.data?.insights || [];
+      const response = await endpoints.analyzeSms(messages, userLanguage);
+      const data = response.data?.data?.result?.insights || response.data?.data?.insights || response.data?.insights || [];
       
       if (data.length > 0) {
         const insight = data[0];
@@ -166,6 +193,8 @@ export default function SmartInsightsScreen() {
         setScanned(true);
         setManualSms('');
         Alert.alert('Analysis Complete', `This message is flagged as: ${insight.status}`);
+      } else {
+        Alert.alert('Analysis Complete', 'No specific threats detected, but always stay cautious.');
       }
     } catch (e) {
       console.error(e);
