@@ -653,9 +653,13 @@ export default function ShgBankingScreen() {
   };
 
   const confirmJoinGroup = async () => {
-    if (!preJoinGroup?.inviteCode) return;
+    const codeToUse = preJoinGroup?.inviteCode || inviteCode;
+    if (!codeToUse) {
+      Alert.alert('Error', 'Invite code is missing.');
+      return;
+    }
     try {
-      await endpoints.joinShgGroup({ inviteCode: preJoinGroup.inviteCode });
+      await endpoints.joinShgGroup({ inviteCode: codeToUse });
       setInviteCode('');
       setPreJoinGroup(null);
       Alert.alert('✅ Request Sent!', 'Your request to join has been sent to the admin for approval.');
